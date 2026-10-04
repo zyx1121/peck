@@ -20,11 +20,27 @@ const launchOptions = {
     ...(executablePath ? [] : ["."]),
     ...(process.platform === "linux" ? ["--no-sandbox"] : []),
   ],
-  env: { ...process.env, PECK_DATA_DIR: dataPath, PECK_PORT: "0" },
+  env: {
+    ...process.env,
+    PECK_DATA_DIR: dataPath,
+    PECK_PORT: "0",
+    // Fake agent CLIs for the resume test, found before the real ones.
+    PECK_AGENT_PATH: resolve("output/fake-agents"),
+    PECK_FAKE_AGENT_OUT: resolve("output/fake-agents/calls.txt"),
+    PECK_WAKE_DEBOUNCE_MS: "300",
+  },
   timeout: 30000,
 }
 await mkdir(output, { recursive: true })
 await rm(dataPath, { recursive: true, force: true })
+await rm(resolve("output/fake-agents"), { recursive: true, force: true })
+await mkdir(resolve("output/fake-agents"), { recursive: true })
+for (const name of ["claude", "codex"])
+  await writeFile(
+    resolve(`output/fake-agents/${name}`),
+    `#!/bin/sh\nprintf '%s\\n' "${name}" "$PWD" "$@" >> "$PECK_FAKE_AGENT_OUT"\n`,
+    { mode: 0o755 }
+  )
 const started = Date.now()
 console.log("Launching Electron")
 const app = await electron.launch(launchOptions)
@@ -34,6 +50,7 @@ app.process().stderr.on("data", (d) => {
 let client, bridge, vite
 const claudeSession = "11111111-2222-4333-8444-555555555555"
 const codexThread = "019a0000-0000-7000-8000-000000000001"
+const wakeSession = "22222222-3333-4444-8555-666666666666"
 async function waitFor(fn, description, timeout = 12000) {
   const limit = Date.now() + timeout
   while (Date.now() < limit) {
@@ -796,6 +813,109 @@ try {
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
+  // Resume: a stopped conversation in an opted-in project is resumed with
+  // narrow permissions when the user adds feedback, and only then.
+  const stoppedPid = await new Promise((done) => {
+    const child = spawn(process.execPath, ["-e", ""])
+    child.on("exit", () => done(child.pid))
+  })
+  const wakeProject = resolve("output/wake-project")
+  await mkdir(wakeProject, { recursive: true })
+  const register = async (pid) => {
+    const agent = new Client({ name: "wake-smoke", version: "1.0.0" })
+    await agent.connect(
+      new StreamableHTTPClientTransport(new URL(config.url), {
+        requestInit: {
+          headers: {
+            Authorization: `Bearer ${config.token}`,
+            "x-peck-agent": encodeURIComponent(
+              JSON.stringify({
+                agent: "claude-code",
+                sessionId: wakeSession,
+                cwd: wakeProject,
+                pid,
+              })
+            ),
+          },
+        },
+      })
+    )
+    await agent.callTool({ name: "peck_status", arguments: {} })
+    await agent.close()
+  }
+  await register(stoppedPid)
+  const calls = async () =>
+    (
+      await readFile(resolve("output/fake-agents/calls.txt"), "utf8").catch(
+        () => ""
+      )
+    )
+      .split("\n")
+      .filter((line) => line === "claude").length
+  const addFeedback = async (text) => {
+    await shell.getByRole("tab", { name: /^留言/ }).click()
+    const reply = shell.getByRole("textbox", { name: "回覆留言" }).first()
+    await reply.fill(text)
+    await reply.press("Enter")
+    await shell.getByText(text, { exact: true }).first().waitFor()
+  }
+  await addFeedback("先不要自動接回。")
+  await new Promise((r) => setTimeout(r, 1500))
+  assert.equal(await calls(), 0, "Resumed without opting in")
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items[0].submenu.items[0].click()
+  )
+  const wakeRow = shell.locator(".agent-session", {
+    hasText: `Claude Code · ${wakeSession.slice(0, 8)}`,
+  })
+  // The box reflects Peck's saved setting, so wait for the round trip.
+  const autoResume = wakeRow.getByRole("checkbox")
+  await autoResume.click()
+  await waitFor(() => autoResume.isChecked(), "auto-resume on")
+  await wakeRow
+    .locator(".agent-command", { hasText: `claude -p --resume ${wakeSession}` })
+    .waitFor()
+  await addFeedback("現在可以接回了。")
+  await waitFor(async () => (await calls()) === 1, "resumed agent run")
+  const invocation = (
+    await readFile(resolve("output/fake-agents/calls.txt"), "utf8")
+  )
+    .trim()
+    .split("\n")
+  assert.deepEqual(invocation.slice(0, 11), [
+    "claude",
+    wakeProject,
+    "-p",
+    "--resume",
+    wakeSession,
+    "--permission-mode",
+    "acceptEdits",
+    "--permission-prompts",
+    "none",
+    "--allowedTools",
+    "mcp__peck",
+  ])
+  assert.ok(invocation[11].startsWith("New Peck comments are waiting."))
+  assert.ok(!invocation.join(" ").includes("可以接回"))
+  await waitFor(
+    async () =>
+      parse(await call("peck_events", { kind: "system" })).some((e) =>
+        e.message.startsWith(
+          `Resumed claude-code session ${wakeSession.slice(0, 8)}`
+        )
+      ),
+    "resume system event"
+  )
+  // A running conversation is not resumed again.
+  await register(process.pid)
+  await addFeedback("執行中不要重複接回。")
+  await new Promise((r) => setTimeout(r, 1500))
+  assert.equal(await calls(), 1, "Resumed a running conversation")
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items[0].submenu.items[0].click()
+  )
+  await autoResume.click()
+  await waitFor(async () => !(await autoResume.isChecked()), "auto-resume off")
   const metrics = await shell.evaluate(() => window.peck.invoke("metrics"))
   await writeFile(
     `${output}/report.json`,
@@ -830,6 +950,7 @@ try {
           "removable dev plugin with tagged server events",
           "dev server records linked to network records",
           "agent session registry and pending comment hints",
+          "opt-in resume of a stopped agent conversation",
           "bundled stdio bridge",
         ],
       },

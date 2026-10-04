@@ -445,6 +445,34 @@ export default function App() {
                                 : "已結束"}{" "}
                             · {time(a.lastSeen)}
                           </span>
+                          {a.command && (
+                            <label className="auto-resume">
+                              <input
+                                type="checkbox"
+                                checked={!!a.autoResume}
+                                onChange={(event) =>
+                                  void call("auto-resume", {
+                                    sessionId: a.sessionId,
+                                    enabled: event.target.checked,
+                                  })
+                                }
+                              />
+                              新留言時接回這個對話
+                            </label>
+                          )}
+                          {a.autoResume && a.command && (
+                            <code className="agent-command">{a.command}</code>
+                          )}
+                          {a.lastRun && (
+                            <span>
+                              上次接回 · {time(a.lastRun.at)} ·{" "}
+                              {a.lastRun.running
+                                ? "執行中"
+                                : a.lastRun.exitCode === 0
+                                  ? "完成"
+                                  : "失敗"}
+                            </span>
+                          )}
                         </div>
                         <IconButton
                           label="移除"

@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { z } from "zod"
 import { Browser, originOf } from "./browser"
 import { DevServers } from "./devserver"
+import { Waker, describeCommand } from "./waker"
 import { Store, safeUrl } from "./store"
 import { startMcp } from "./mcp"
 import { telemetry } from "./telemetry"
@@ -73,11 +74,21 @@ async function boot() {
       agents: store
         .agents()
         .slice(0, 5)
-        .map((a) => ({
-          ...a,
-          running: alive(a.pid),
-          watching: mcp.watching.has(a.sessionId),
-        })),
+        .map((a) => {
+          const run = waker.runs.get(a.sessionId)
+          return {
+            ...a,
+            running: alive(a.pid),
+            watching: mcp.watching.has(a.sessionId),
+            autoResume: store.project(a.cwd).autoResume,
+            command: describeCommand(a),
+            lastRun: run && {
+              at: run.at,
+              running: run.running,
+              exitCode: run.exitCode,
+            },
+          }
+        }),
       annotations: store.annotations().map((a) => ({
         ...a,
         screenshot: undefined,
@@ -155,6 +166,16 @@ async function boot() {
     (origin) => browser.devOrigins.delete(origin)
   )
   browser.on("devserver", (origin: string) => devServers.watch(origin))
+  const waker = new Waker(
+    store,
+    join(dataPath, "agent-runs"),
+    () => mcp.watching.size > 0 || mcp.status.waiters > 0,
+    alive,
+    (level, message) => {
+      if (browser.activeId)
+        store.event(browser.activeId, "system", level, message)
+    }
+  )
   const connectionFile = join(dataPath, "connection.json")
   writeFileSync(
     connectionFile,
@@ -231,6 +252,7 @@ async function boot() {
     if (pushTimer) clearTimeout(pushTimer)
     mcp.close()
     devServers.close()
+    waker.close()
     browser.destroy()
     store.close()
     try {
@@ -410,6 +432,15 @@ async function boot() {
             "重新開啟，請再檢查。",
             "user"
           )
+        case "auto-resume": {
+          const sessionId = z.string().max(200).parse(args.sessionId)
+          const agent = store.agents().find((a) => a.sessionId === sessionId)
+          if (!agent) throw new Error("Unknown agent session")
+          store.setProject(agent.cwd, {
+            autoResume: z.boolean().parse(args.enabled),
+          })
+          return
+        }
         case "forget-agent":
           store.forgetAgent(z.string().max(200).parse(args.sessionId))
           return

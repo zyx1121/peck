@@ -41,7 +41,8 @@ export class Store extends EventEmitter {
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, tab TEXT, time INTEGER, payload TEXT);
       CREATE TABLE IF NOT EXISTS annotations (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, payload TEXT);
-      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);`)
+      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);
+      CREATE TABLE IF NOT EXISTS projects (cwd TEXT PRIMARY KEY, payload TEXT);`)
     this.db
       .prepare("DELETE FROM events WHERE time < ?")
       .run(Date.now() - 7 * 86400000)
@@ -128,6 +129,22 @@ export class Store extends EventEmitter {
       .all()
       .map((r) => JSON.parse(String(r.payload)) as AgentSession)
       .sort((a, b) => b.lastSeen - a.lastSeen)
+  }
+  // Per-project settings, keyed by the agent's working directory.
+  project(cwd: string): { autoResume: boolean } {
+    const row = this.db
+      .prepare("SELECT payload FROM projects WHERE cwd=?")
+      .get(cwd)
+    return {
+      autoResume: false,
+      ...(row ? JSON.parse(String(row.payload)) : {}),
+    }
+  }
+  setProject(cwd: string, settings: { autoResume: boolean }) {
+    this.db
+      .prepare("INSERT OR REPLACE INTO projects(cwd,payload) VALUES(?,?)")
+      .run(cwd, JSON.stringify(settings))
+    this.emit("change")
   }
   forgetAgent(sessionId: string) {
     this.db.prepare("DELETE FROM agents WHERE session=?").run(sessionId)

@@ -15,7 +15,10 @@ coding agent. Tagline: **Point it out.** By zyx.
   outer website template, product heading, corner links, status footer, or
   copyright footer.
 - Visible and background modes preserve the same live page. No separate
-  headless engine and no embedded model or agent orchestration runtime.
+  headless engine and no embedded model. Peck never starts a new agent. With
+  per-project opt-in, it resumes the user's own registered conversation
+  through the agent's official CLI when a comment arrives and nothing is
+  watching, with narrow permissions and never a permission bypass.
 - A local MCP server ships in the desktop app, with a bundled stdio bridge.
 - Pick a DOM element, leave feedback with a screenshot and debug context, and
   receive agent acknowledgement and replies in the same thread.

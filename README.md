@@ -84,9 +84,24 @@ uses it (Claude Code's session id, or Codex's thread id) with its working
 directory, and lists it under Local MCP. Every tool result also reports
 pending comments, so a conversation that stopped watching still notices them.
 
-`peck_watch_annotations` waits for feedback in the current conversation. A
-closed conversation is not automatically restarted. Unprocessed feedback stays
-in SQLite for the next session. Peck never runs an additional coding agent.
+`peck_watch_annotations` waits for feedback in the current conversation.
+Unprocessed feedback stays in SQLite for the next session.
+
+To have new feedback resume a stopped conversation, turn on
+**新留言時接回這個對話** for it under Local MCP. This is off by default and set
+per project directory. When a comment arrives, nothing is watching, and that
+conversation's process has ended, Peck runs the command shown under the
+checkbox in the project directory:
+
+- Claude Code: `claude -p --resume <id> --permission-mode acceptEdits
+  --permission-prompts none --allowedTools mcp__peck "<prompt>"`
+- Codex: `codex exec --sandbox workspace-write resume <id> "<prompt>"`
+
+The prompt only says that comments are waiting; the agent reads them through
+MCP. Edits are accepted, Peck's tools are allowed, and anything else that
+needs approval is denied. Peck runs one at a time, backs off after failures,
+logs each run as a system record, and keeps run output in
+`agent-runs/` under its data directory. Peck never starts a new agent.
 
 ## Dev plugin
 
