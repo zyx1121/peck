@@ -7,6 +7,15 @@ export interface PickedElement {
   viewport: { width: number; height: number; devicePixelRatio: number }
   styles: Record<string, string>
   source?: string
+  // Where the element is written, resolved after picking.
+  location?: SourceLocation
+}
+export interface SourceLocation {
+  file: string
+  line?: number
+  column?: number
+  component?: string
+  via: "attribute" | "react"
 }
 export interface TabInfo {
   id: string

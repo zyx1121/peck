@@ -73,6 +73,14 @@ window.addEventListener(
     event.preventDefault()
     event.stopImmediatePropagation()
     const element = event.target
+    // A one-time marker lets the main world find this exact element to
+    // resolve its source; it is removed there, or here as a fallback.
+    const nonce = crypto.randomUUID()
+    element.setAttribute("data-peck-picked", nonce)
+    setTimeout(() => {
+      if (element.getAttribute("data-peck-picked") === nonce)
+        element.removeAttribute("data-peck-picked")
+    }, 3000)
     const r = element.getBoundingClientRect()
     const css = getComputedStyle(element)
     const styles = Object.fromEntries(
@@ -98,6 +106,7 @@ window.addEventListener(
       viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
       styles,
       source: element.getAttribute("data-source") ?? undefined,
+      nonce,
     })
     picking = false
     cleanup()

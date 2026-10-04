@@ -34,6 +34,6 @@ coding agent. Tagline: **Point it out.** By zyx.
 
 ## Deferred
 
-Area/multiple selection, framework source plugins, cross-origin iframe and
+Area/multiple selection, source locations outside React, cross-origin iframe and
 closed-shadow-root picking, navigation ownership arbitration, server log
 connectors, signed/notarized distribution, updater, and performance guarantees.
