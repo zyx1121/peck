@@ -13,7 +13,7 @@ export function TaskShell({
   lang = "en",
   desktop = false,
 }: {
-  title: string
+  title: ReactNode
   description?: string
   actions?: ReactNode
   children: ReactNode

@@ -163,7 +163,12 @@ export default function App() {
     <TaskShell
       desktop
       lang="zh-TW"
-      title="peck"
+      title={
+        <span className="peck-title">
+          <span className="peck-mark" aria-hidden="true" />
+          peck
+        </span>
+      }
       description="Point it out."
       actions={
         <>
