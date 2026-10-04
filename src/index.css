@@ -156,26 +156,6 @@ button {
   overflow: auto;
   overscroll-behavior: contain;
 }
-.pick-prompt {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 24px 20px;
-  border-bottom: 1px solid var(--border);
-}
-.pick-prompt > svg {
-  width: 20px;
-  height: 20px;
-  margin-top: 4px;
-}
-.pick-prompt p {
-  font-size: 16px;
-  margin: 0 0 8px;
-}
-.pick-prompt span {
-  font-size: 14px;
-  color: var(--muted-foreground);
-}
 .section-label {
   display: flex;
   justify-content: space-between;
@@ -236,13 +216,9 @@ button {
 .composer-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-top: 12px;
   gap: 8px;
-}
-.composer-footer > span {
-  font-size: 14px;
-  color: var(--muted-foreground);
 }
 .comment-card {
   padding: 20px;
@@ -375,15 +351,6 @@ button {
 }
 .connect .section-label {
   padding: 16px 0;
-}
-.connect h2 {
-  font-size: 16px;
-  margin-bottom: 16px;
-}
-.connect p {
-  margin: 0 0 20px;
-  color: var(--muted-foreground);
-  font-size: 14px;
 }
 .connect code {
   display: block;

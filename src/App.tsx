@@ -14,14 +14,12 @@ import {
   Circle,
   Copy,
   ExternalLink,
-  MessageSquare,
   MousePointer2,
   MoreHorizontal,
   PanelRight,
   Plus,
   RefreshCw,
   Send,
-  Terminal,
   Unplug,
   X,
 } from "lucide-react"
@@ -184,7 +182,7 @@ export default function App() {
     setBusy(false)
     if (result) {
       setComment("")
-      showNotice("留言已送出，會出現在 agent 的回饋佇列。")
+      showNotice("留言已送出")
     }
   }
   const annotations = state?.annotations ?? []
@@ -361,14 +359,13 @@ export default function App() {
                         <Textarea
                           ref={textarea}
                           aria-label="修改意見"
-                          placeholder="這裡想怎麼改？"
+                          placeholder="修改意見"
                           rows={4}
                           value={comment}
                           onChange={(event) => setComment(event.target.value)}
                           maxLength={4000}
                         />
                         <div className="composer-footer">
-                          <span>附上畫面與除錯紀錄</span>
                           <Button
                             className="h-9"
                             type="submit"
@@ -379,34 +376,14 @@ export default function App() {
                           </Button>
                         </div>
                       </form>
-                    ) : (
-                      <div className="pick-prompt">
-                        <MousePointer2 />
-                        <div>
-                          <p>指一下，說清楚。</p>
-                          <span>選取網頁中的元件，留下修改意見。</span>
-                        </div>
-                      </div>
-                    )}
-                    <div className="section-label">
-                      <span>
-                        {annotations.length
-                          ? `${annotations.length} 則留言`
-                          : "回饋紀錄"}
-                      </span>
-                      <span>
-                        {waiting ? "Agent 等待中" : "由原本的 agent 對話處理"}
-                      </span>
-                    </div>
-                    {!annotations.length && (
-                      <div className="empty">
-                        <MessageSquare />
-                        <p>你的第一則留言，從畫面開始。</p>
+                    ) : null}
+                    {(annotations.length > 0 || waiting) && (
+                      <div className="section-label">
                         <span>
-                          截圖、元件位置和當下的錯誤
-                          <br />
-                          會一起交給 agent。
+                          {annotations.length > 0 &&
+                            `${annotations.length} 則留言`}
                         </span>
+                        <span>{waiting && "Agent 等待中"}</span>
                       </div>
                     )}
                     {annotations.map((item) => (
@@ -423,18 +400,13 @@ export default function App() {
                 )}
                 {panel === "connect" && (
                   <div className="connect">
-                    <div className="section-label">接上你的 agent</div>
-                    <h2>同一個畫面，同一段對話。</h2>
-                    <p>
-                      Peck 內建 local MCP。Codex 或 Claude Code
-                      連線後，就能讀取留言、截圖與除錯紀錄。
-                    </p>
+                    <div className="section-label">Local MCP</div>
                     <code>{state.mcp.url}</code>
                     <Button
                       className="mt-5 h-9"
                       onClick={async () => {
                         const copied = await call("copy-config")
-                        if (copied) showNotice("MCP 設定已複製，不含連線密鑰。")
+                        if (copied) showNotice("已複製 MCP 設定")
                       }}
                     >
                       <Copy />
@@ -453,14 +425,6 @@ export default function App() {
                             : "等待 agent 連線"}
                       </span>
                     </div>
-                    <p className="text-xs">
-                      連線後，對 agent 說：「用 Peck
-                      持續等我的留言，修改後回覆驗證結果。」
-                    </p>
-                    <p className="text-xs">
-                      選單中的「移至背景」會保留目前網頁。關閉視窗會結束該頁，使用「結束
-                      Peck」才會停止 MCP。
-                    </p>
                     <a
                       href="https://github.com/zyx1121/peck"
                       className="inline-flex items-center gap-2 text-sm"
@@ -588,7 +552,7 @@ function CommentCard({
           className="context-button"
           onClick={() => void call("reopen", { id: item.id })}
         >
-          還需要調整，重新開啟
+          重新開啟
         </button>
       )}
     </article>
@@ -652,55 +616,43 @@ function EventList({
 }) {
   return (
     <div className="event-list">
-      <div className="section-label">
-        <span>{kind === "console" ? "Console 與錯誤" : "網路請求"}</span>
-        <span>跨頁保留</span>
-      </div>
-      {events.length === 0 ? (
-        <div className="empty">
-          <Terminal />
-          <p>尚無紀錄</p>
-          <span>操作網頁後，紀錄會出現在這裡。</span>
-        </div>
-      ) : (
-        [...events].reverse().map((event) => (
-          <details className={`event event-${event.level}`} key={event.id}>
-            <summary>
-              <span className="event-time">{time(event.time)}</span>
-              {kind === "network" ? (
-                <>
-                  <span className="http-status">
-                    {String(event.details.status ?? "ERR")}
-                  </span>
-                  <span className="event-message">{event.message}</span>
-                  <span className="duration">
-                    {String(event.details.durationMs ?? 0)} ms
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="level">
-                    {event.kind === "server"
-                      ? `server ${event.level}`
-                      : event.level}
-                  </span>
-                  <span className="event-message">{event.message}</span>
-                </>
-              )}
-            </summary>
-            {kind === "network" && (
-              <ServerRecords
-                records={server.filter(
-                  (s) =>
-                    !!event.details.peckRequestId &&
-                    s.details.peckRequestId === event.details.peckRequestId
-                )}
-              />
+      {[...events].reverse().map((event) => (
+        <details className={`event event-${event.level}`} key={event.id}>
+          <summary>
+            <span className="event-time">{time(event.time)}</span>
+            {kind === "network" ? (
+              <>
+                <span className="http-status">
+                  {String(event.details.status ?? "ERR")}
+                </span>
+                <span className="event-message">{event.message}</span>
+                <span className="duration">
+                  {String(event.details.durationMs ?? 0)} ms
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="level">
+                  {event.kind === "server"
+                    ? `server ${event.level}`
+                    : event.level}
+                </span>
+                <span className="event-message">{event.message}</span>
+              </>
             )}
-            <pre>{JSON.stringify(event.details, null, 2)}</pre>
-          </details>
-        ))
-      )}
+          </summary>
+          {kind === "network" && (
+            <ServerRecords
+              records={server.filter(
+                (s) =>
+                  !!event.details.peckRequestId &&
+                  s.details.peckRequestId === event.details.peckRequestId
+              )}
+            />
+          )}
+          <pre>{JSON.stringify(event.details, null, 2)}</pre>
+        </details>
+      ))}
     </div>
   )
 }
