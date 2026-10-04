@@ -112,7 +112,7 @@ try {
     })
   )
   const tools = await client.listTools()
-  assert.equal(tools.tools.length, 15)
+  assert.equal(tools.tools.length, 16)
   // A new window starts its history at the requested page.
   const firstPage = parse(await call("peck_status")).tabs[0]
   assert.ok(firstPage.url.endsWith("/demo"))
@@ -381,6 +381,26 @@ try {
     async () => (await windowCount()) === beforeTabs,
     "closed new page window"
   )
+  // Waiting: navigation after history.back(), text and selector after a
+  // click, network idle, and a clear timeout.
+  const demoUrl = config.url.replace("/mcp", "/demo")
+  await call("peck_navigate", { url: `${demoUrl}?second` })
+  await call("peck_wait", { until: "url", value: "?second" })
+  await call("peck_evaluate", { expression: "history.back(); true" })
+  const back = parse(await call("peck_wait", { until: "navigation" }))
+  assert.ok(back.url.endsWith("/demo"), back.url)
+  await call("peck_wait", { until: "load" })
+  await call("peck_click", { selector: "#save-button" })
+  await call("peck_wait", { until: "text", value: "儲存失敗" })
+  await call("peck_wait", { until: "selector", value: "#result" })
+  await call("peck_wait", { until: "networkIdle", idleMs: 200 })
+  const timedOut = await client.callTool({
+    name: "peck_wait",
+    arguments: { until: "selector", value: "#missing", timeoutMs: 300 },
+  })
+  assert.ok(
+    timedOut.isError && JSON.stringify(timedOut.content).includes("Timed out")
+  )
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(
     new StdioClientTransport({
@@ -395,7 +415,7 @@ try {
       },
     })
   )
-  assert.equal((await bridge.listTools()).tools.length, 15)
+  assert.equal((await bridge.listTools()).tools.length, 16)
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
@@ -424,6 +444,7 @@ try {
           "single header row with the page title",
           "one page per window",
           "trusted click, type, and key input",
+          "waiting for navigation, text, selector, and network idle",
           "bundled stdio bridge",
         ],
       },

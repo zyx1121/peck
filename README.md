@@ -95,6 +95,7 @@ in SQLite for the next session. Peck never runs an additional coding agent.
 | `peck_click` | Click an element with real, trusted mouse events |
 | `peck_type` | Focus an element and type with real key events |
 | `peck_press` | Press a key or a combination such as `Escape` or `Meta+A` |
+| `peck_wait` | Wait for a load, navigation, element, text, URL, or network idle |
 | `peck_screenshot` | Capture a page image |
 | `peck_events` | Query captured console, network, and system records |
 | `peck_annotations` | List feedback and status |

@@ -8,6 +8,7 @@ import { Browser } from "./browser"
 import { Store } from "./store"
 import { demoPage } from "./demo"
 import { telemetry } from "./telemetry"
+import type { WaitCondition } from "./wait"
 import type { Annotation } from "../src/shared"
 
 export async function startMcp(
@@ -190,6 +191,46 @@ export async function startMcp(
       async (args) => {
         const id = inputWindow(args.tabId)
         return data(await browser.press(args.keys, id))
+      }
+    )
+    tool(
+      "peck_wait",
+      "Wait for a page condition instead of sleeping. until: load (the current document finished loading), navigation (a navigation, including a same-page route change, committed after your latest action on that window and finished loading), selector (value is a CSS selector; state attached, visible, hidden, or detached), text (the page text contains value), url (the URL contains value), or networkIdle (no HTTP requests for idleMs; EventSource streams are ignored). Returns the elapsed time, or fails at timeoutMs.",
+      {
+        until: z.enum([
+          "load",
+          "navigation",
+          "selector",
+          "text",
+          "url",
+          "networkIdle",
+        ]),
+        value: z.string().max(2000).optional(),
+        state: z
+          .enum(["attached", "visible", "hidden", "detached"])
+          .default("visible"),
+        idleMs: z.number().int().min(100).max(10000).default(500),
+        timeoutMs: z.number().int().min(100).max(60000).default(10000),
+        tabId: z.string().optional(),
+      },
+      async (args, signal) => {
+        const value = () => {
+          if (!args.value) throw new Error(`value required for ${args.until}`)
+          return args.value
+        }
+        const condition: WaitCondition =
+          args.until === "selector"
+            ? { until: "selector", selector: value(), state: args.state }
+            : args.until === "text"
+              ? { until: "text", text: value() }
+              : args.until === "url"
+                ? { until: "url", url: value() }
+                : args.until === "networkIdle"
+                  ? { until: "networkIdle", idleMs: args.idleMs }
+                  : { until: args.until }
+        return data(
+          await browser.wait(condition, args.timeoutMs, signal, args.tabId)
+        )
       }
     )
     tool(
