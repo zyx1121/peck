@@ -433,7 +433,7 @@ try {
     "reopened feedback watcher"
   )
   await shell.getByRole("tab", { name: /^留言/ }).click()
-  await shell.getByText("還需要調整，重新開啟", { exact: true }).click()
+  await shell.getByText("重新開啟", { exact: true }).click()
   const reopened = parse(await reopenedWatch)
   assert.equal(reopened.annotations[0]?.id, item.id)
   assert.ok(reopened.cursor > received.cursor)
