@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events"
 import type { TabInfo } from "../src/shared"
 import { Store, redact, safeUrl } from "./store"
 import * as input from "./input"
+import { locate as locateSource } from "./source"
 import { describe, met, type Activity, type WaitCondition } from "./wait"
 
 export function webUrl(input: string) {
@@ -439,7 +440,16 @@ export class Browser extends EventEmitter {
     }
   }
   async execute(expression: string, id = this.activeId) {
-    return this.awake(id, (send) => input.evaluate(send, expression))
+    return this.awake(id, async (send) => {
+      try {
+        return await input.evaluate(send, expression)
+      } catch (error) {
+        // A script that navigates the page loses its result, not its effect.
+        if (/navigated or closed|context was destroyed/i.test(String(error)))
+          return { navigated: true }
+        throw error
+      }
+    })
   }
   async click(
     target: { selector?: string; x?: number; y?: number },
@@ -460,6 +470,24 @@ export class Browser extends EventEmitter {
     input.parseKeys(keys)
     await this.awake(id, (send) => input.press(send, keys))
     return { pressed: keys }
+  }
+  // Find the source of a picked element; see source.ts.
+  async locate(nonce: string, id = this.activeId) {
+    const { info, view } = this.current(id)
+    const { session } = view.webContents
+    const fetchText = async (url: string, init?: RequestInit) => {
+      const response = await session.fetch(url, init)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const text = await response.text()
+      if (text.length > 8 * 1024 * 1024) throw new Error("Too large")
+      return text
+    }
+    const origin = new URL(info.url).origin
+    return this.awake(
+      id,
+      (send) => locateSource(send, fetchText, nonce, origin),
+      false
+    )
   }
   async wait(
     condition: WaitCondition,

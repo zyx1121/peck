@@ -123,6 +123,11 @@ preload provides the DOM picker. UI and MCP read the same SQLite data.
 - Events keep up to approximately 3,000 records and expire after seven days on
   startup. Text bodies are captured only for small responses and truncated to
   16,000 characters. Binary response bodies are omitted.
+- Comments record where the element is written: a build-time `data-insp-path`
+  or `data-source` attribute, or a React dev build's owner stack mapped
+  through the dev server's source maps (Vite, and Next.js including server
+  components). The project needs no changes. Peck fetches scripts and maps
+  only from the page's own origin.
 - Comments keep a screenshot and the 30 most recent records at selection time.
   Comments persist until their local data is removed. They are not sent to a
   cloud service by Peck unless an agent explicitly reads them through MCP.
@@ -156,8 +161,9 @@ windows, the stdio bridge, and persistence across restart. Artifacts are written
 ## Demo limits
 
 - DOM picking targets the top-level document. Cross-origin frames, closed
-  shadow roots, area selection, and framework component source mapping are
-  future work. Canvas content can be selected only as a canvas element.
+  shadow roots, and area selection are future work. Source locations cover
+  React dev builds and build-time attributes; other frameworks fall back to
+  the selector. Canvas content can be selected only as a canvas element.
 - Up to eight page windows share one dedicated Peck profile. Windows are not
   restored after fully quitting. Comments are restored.
 - No automatic source edits, model runtime, closed-session wakeup, updater,

@@ -38,6 +38,7 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "@eslint/js": "^10",
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@modelcontextprotocol/sdk": "1.32.0",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^24",

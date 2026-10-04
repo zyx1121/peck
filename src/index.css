@@ -220,6 +220,13 @@ button {
   overflow-wrap: anywhere;
   color: var(--muted-foreground);
 }
+.source-location {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
 .selected-text {
   margin: 8px 0 16px;
   font-size: 14px;

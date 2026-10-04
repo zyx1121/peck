@@ -6,7 +6,12 @@ import { Browser } from "./browser"
 import { Store, safeUrl } from "./store"
 import { startMcp } from "./mcp"
 import { telemetry } from "./telemetry"
-import type { BrowserEvent, PeckState, PickedElement } from "../src/shared"
+import type {
+  BrowserEvent,
+  PeckState,
+  PickedElement,
+  SourceLocation,
+} from "../src/shared"
 
 // Each page window owns its selection and the context frozen at pick time.
 type Session = {
@@ -15,6 +20,7 @@ type Session = {
   picking: boolean
   selection: PickedElement | null
   shot?: string
+  locating: Promise<SourceLocation | undefined>
   generation: number
   context: BrowserEvent[]
   capture: Promise<string | undefined>
@@ -148,6 +154,7 @@ async function boot() {
       generation: 0,
       context: [],
       capture: Promise.resolve(undefined),
+      locating: Promise.resolve(undefined),
     })
     window.on("show", push)
     window.on("hide", push)
@@ -222,13 +229,15 @@ async function boot() {
     }),
     styles: z.record(z.string().max(500)),
     source: z.string().max(2000).optional(),
+    nonce: z.string().uuid().optional(),
   })
   ipcMain.on("peck:picked", (event, value) => {
     const session = pageSession(event)
     const parsed = pickedSchema.safeParse(value)
     if (!session || !parsed.success) return
     const generation = ++session.generation
-    session.selection = { ...parsed.data, url: safeUrl(parsed.data.url) }
+    const { nonce, ...picked } = parsed.data
+    session.selection = { ...picked, url: safeUrl(picked.url) }
     session.picking = false
     session.shot = undefined
     session.context = store.events(session.id, 30)
@@ -239,6 +248,22 @@ async function boot() {
         return image
       })
       .catch(() => undefined)
+    session.locating = nonce
+      ? browser
+          .locate(nonce, session.id)
+          .then((location) => {
+            if (
+              location &&
+              generation === session.generation &&
+              session.selection
+            ) {
+              session.selection = { ...session.selection, location }
+              push()
+            }
+            return location
+          })
+          .catch(() => undefined)
+      : Promise.resolve(undefined)
     push()
   })
   ipcMain.on("peck:pick-cancel", (event) => {
@@ -306,7 +331,20 @@ async function boot() {
           const context = session.context
           const generation = session.generation
           const image = session.shot ?? (await session.capture)
-          const item = store.add(id, comment, selected, image, context)
+          // Wait briefly for the source location if it is still resolving.
+          const location =
+            selected.location ??
+            (await Promise.race([
+              session.locating,
+              new Promise<undefined>((resolve) => setTimeout(resolve, 1000)),
+            ]))
+          const item = store.add(
+            id,
+            comment,
+            location ? { ...selected, location } : selected,
+            image,
+            context
+          )
           if (session.generation === generation) clearSelection(session)
           telemetry("annotation.created", { annotation_id: item.id })
           push()

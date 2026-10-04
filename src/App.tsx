@@ -29,7 +29,12 @@ import { useTaskTheme } from "@/components/task-theme"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import type { Annotation, BrowserEvent, PeckState } from "./shared"
+import type {
+  Annotation,
+  BrowserEvent,
+  PeckState,
+  SourceLocation,
+} from "./shared"
 
 type Panel = "comments" | "console" | "network" | "connect"
 const time = (value: number) =>
@@ -39,6 +44,14 @@ const time = (value: number) =>
     second: "2-digit",
     hour12: false,
   })
+// "Header · /src/App.jsx:11"
+const where = (location: SourceLocation) =>
+  [
+    location.component,
+    location.file + (location.line ? `:${location.line}` : ""),
+  ]
+    .filter(Boolean)
+    .join(" · ")
 const statuses = {
   pending: "待處理",
   acknowledged: "處理中",
@@ -336,6 +349,11 @@ export default function App() {
                         <code className="selector">
                           {state.selection.selector}
                         </code>
+                        {state.selection.location && (
+                          <code className="source-location">
+                            {where(state.selection.location)}
+                          </code>
+                        )}
                         <p className="selected-text">
                           {state.selection.text.slice(0, 140) ||
                             `<${state.selection.tag}>`}
@@ -493,6 +511,9 @@ function CommentCard({
       </div>
       <p className="comment-text">{item.comment}</p>
       <code className="selector">{item.element.selector}</code>
+      {item.element.location && (
+        <code className="source-location">{where(item.element.location)}</code>
+      )}
       <button
         className="context-button"
         onClick={async () => {

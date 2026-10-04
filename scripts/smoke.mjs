@@ -6,6 +6,8 @@ import { mkdir, readFile, writeFile, rm } from "node:fs/promises"
 import assert from "node:assert/strict"
 import { resolve } from "node:path"
 import { request } from "node:http"
+import { createServer } from "node:net"
+import { spawn } from "node:child_process"
 
 const output = resolve("output/playwright")
 const dataPath = resolve("output/smoke-profile")
@@ -29,7 +31,7 @@ const app = await electron.launch(launchOptions)
 app.process().stderr.on("data", (d) => {
   if (/Error|Exception|failed/i.test(d.toString())) process.stderr.write(d)
 })
-let client, bridge
+let client, bridge, vite
 async function waitFor(fn, description, timeout = 12000) {
   const limit = Date.now() + timeout
   while (Date.now() < limit) {
@@ -208,6 +210,10 @@ try {
   assert.equal(received.annotations.length, 1)
   const item = received.annotations[0]
   assert.equal(item.element.selector, "#headline")
+  assert.deepEqual(item.element.location, {
+    file: "electron/demo.ts",
+    via: "attribute",
+  })
   assert.equal(item.comment, "把標題改成中文，字小一點。")
   const full = await call("peck_annotation_get", { id: item.id })
   assert.ok(full.content.some((c) => c.type === "image" && c.data.length > 100))
@@ -485,6 +491,66 @@ try {
   const devServer = parse(await call("peck_dev_server"))
   assert.equal(devServer.available, false)
   assert.ok(devServer.endpoint.endsWith("/_next/mcp"))
+  // Source locations: a React dev app on Vite resolves the picked element
+  // to its component and original file and line without project changes.
+  const port = await new Promise((resolve) => {
+    const probe = createServer().listen(0, "127.0.0.1", () => {
+      const { port } = probe.address()
+      probe.close(() => resolve(port))
+    })
+  })
+  vite = spawn(
+    process.execPath,
+    [
+      "node_modules/vite/bin/vite.js",
+      "--config",
+      "fixtures/vite-react/vite.config.mjs",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--strictPort",
+    ],
+    { stdio: "inherit" }
+  )
+  const fixtureUrl = `http://127.0.0.1:${port}/`
+  await waitFor(
+    () =>
+      fetch(fixtureUrl).then(
+        (r) => r.ok,
+        () => false
+      ),
+    "Vite fixture",
+    30000
+  )
+  await call("peck_navigate", { url: fixtureUrl })
+  await call("peck_wait", { until: "selector", value: "#title" })
+  const fixtureWatch = call("peck_watch_annotations", {
+    afterSequence: reopened.cursor,
+    timeoutMs: 20000,
+  })
+  await shell.getByRole("button", { name: "選取元件", exact: true }).click()
+  await shell.locator('[aria-label="選取元件"][aria-pressed="true"]').waitFor()
+  await guest.locator("#title").click()
+  await shell.getByText("Header · /src/App.jsx:11", { exact: true }).waitFor()
+  await shell.getByRole("textbox", { name: "修改意見" }).fill("標題放大。")
+  await shell.getByRole("button", { name: "送出留言", exact: true }).click()
+  const fixtureItem = parse(await fixtureWatch).annotations.find(
+    (a) => a.comment === "標題放大。"
+  )
+  assert.deepEqual(
+    {
+      ...fixtureItem.element.location,
+      column: undefined,
+    },
+    {
+      file: "/src/App.jsx",
+      line: 11,
+      column: undefined,
+      component: "Header",
+      via: "react",
+    }
+  )
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(
     new StdioClientTransport({
@@ -533,6 +599,7 @@ try {
           "dev server MCP availability",
           "fresh screenshots of hidden windows",
           "after screenshots in agent replies",
+          "source locations from attributes and React owner stacks",
           "bundled stdio bridge",
         ],
       },
@@ -549,6 +616,7 @@ try {
     })
   )
 } finally {
+  vite?.kill()
   await bridge?.close()
   await client?.close()
   await app.close()
