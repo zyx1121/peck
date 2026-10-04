@@ -345,6 +345,22 @@ button {
 .event-error .http-status {
   color: var(--destructive);
 }
+.server-records {
+  margin-top: 12px;
+  font-size: 14px;
+}
+.server-records > span {
+  color: var(--muted-foreground);
+}
+.server-records p {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.server-records .event-error {
+  color: var(--destructive);
+}
 .event pre {
   margin-top: 12px;
   font: 14px/20px var(--font-mono);

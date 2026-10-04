@@ -92,6 +92,13 @@ returns one file, `peck-dev.mjs`, and the exact edits. The plugin serves
 errors, and failed requests, each tagged with the request that caused it.
 Requests need Peck's local token.
 
+When a dev server answers with the plugin's `x-peck-dev` header, Peck tags
+the page's requests to it with `x-peck-request-id` and pulls the events. A
+failing request in the Network panel then shows the server logs and error it
+caused, `peck_events` returns them as `server` records, and comments freeze
+them with the rest of the context. Peck sends its token only to origins that
+announce the plugin.
+
 It runs only in development: Vite applies it to `vite dev` only, and the
 Next.js instrumentation hooks load it only in `next dev` without bundling it.
 Remove it when the problem is solved with `peck_dev_plugin` and

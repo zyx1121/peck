@@ -418,6 +418,7 @@ export default function App() {
                   <EventList
                     kind={panel}
                     events={panel === "console" ? consoleEvents : networkEvents}
+                    server={events.filter((e) => e.kind === "server")}
                   />
                 )}
                 {panel === "connect" && (
@@ -626,12 +627,28 @@ function ReplyImage({
     </>
   )
 }
+function ServerRecords({ records }: { records: BrowserEvent[] }) {
+  if (!records.length) return null
+  return (
+    <div className="server-records">
+      <span>伺服器紀錄</span>
+      {records.map((r) => (
+        <p className={`event-${r.level}`} key={r.id}>
+          {r.message}
+        </p>
+      ))}
+    </div>
+  )
+}
 function EventList({
   kind,
   events,
+  server,
 }: {
   kind: "console" | "network"
   events: BrowserEvent[]
+  // Dev server records, linked to network records by peckRequestId.
+  server: BrowserEvent[]
 }) {
   return (
     <div className="event-list">
@@ -662,11 +679,24 @@ function EventList({
                 </>
               ) : (
                 <>
-                  <span className="level">{event.level}</span>
+                  <span className="level">
+                    {event.kind === "server"
+                      ? `server ${event.level}`
+                      : event.level}
+                  </span>
                   <span className="event-message">{event.message}</span>
                 </>
               )}
             </summary>
+            {kind === "network" && (
+              <ServerRecords
+                records={server.filter(
+                  (s) =>
+                    !!event.details.peckRequestId &&
+                    s.details.peckRequestId === event.details.peckRequestId
+                )}
+              />
+            )}
             <pre>{JSON.stringify(event.details, null, 2)}</pre>
           </details>
         ))

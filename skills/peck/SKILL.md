@@ -40,6 +40,10 @@ more than one page is open. Do not navigate the user's active page while they
 are selecting or writing a comment. Show a window with `peck_window` when review
 is useful. Hide it only when requested.
 
+For a backend bug, add the dev plugin from `peck_dev_plugin` for the session.
+Network records then link to `server` records through `peckRequestId`.
+Remove the plugin when the problem is solved.
+
 For framework errors, call `peck_dev_server`. On Next.js 16 it reaches the
 dev server's built-in MCP (compile issues, routes, server actions), even when
 the dev server runs on another machine.

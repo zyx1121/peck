@@ -86,6 +86,9 @@ function patchServers() {
       serve(req, res)
       return true
     }
+    // Tells Peck this dev server has the plugin, so it starts tagging
+    // requests and pulling events. Peck sends its token nowhere else.
+    res.setHeader?.("x-peck-dev", String(VERSION))
     const id = req.headers["x-peck-request-id"]
     const context = { requestId: id ? String(id).slice(0, 100) : undefined }
     const started = Date.now()
