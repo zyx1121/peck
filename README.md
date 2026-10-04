@@ -1,0 +1,165 @@
+# peck
+
+> Point it out.
+
+A Chromium desktop browser for you and your coding agent. Point at an element,
+leave a comment, and give your existing Codex or Claude Code conversation the
+screenshot, selector, console errors, and network context it needs.
+
+[![CI](https://github.com/zyx1121/peck/actions/workflows/ci.yml/badge.svg)](https://github.com/zyx1121/peck/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+Peck keeps its own browser profile. Hide the window while your agent works,
+then show the same live page when you want to review it. Your everyday browser
+stays separate. No model account or API key is required by Peck itself.
+
+## Try the demo
+
+Download the Apple Silicon app from [Releases](https://github.com/zyx1121/peck/releases).
+Open Peck, then use the built-in Fieldnotes playground or enter your own dev URL.
+The demo is unsigned and not notarized.
+
+1. Click **選取元件** or press **Cmd+Shift+C**, then click a page element.
+2. Write a comment in the right panel and send it.
+3. Connect your agent through local MCP. Ask it to watch and process Peck feedback.
+4. Read its reply in the original comment. Reply again to queue another pass.
+
+The playground's save button deliberately returns HTTP 422. Use it to inspect
+real request and response details in Network and an error in Console.
+The playground does not run a simulated agent or automatically pretend to fix code.
+
+## Connect your existing agent
+
+Peck includes an authenticated loopback HTTP MCP server and a stdio bridge.
+The bridge discovers the running app's port and token from its local connection
+file. You do not need a separate Node.js installation or a second browser.
+
+Open **Local MCP** in the app and copy the client configuration. For an app at
+`/Applications/Peck.app`, the generic MCP configuration is:
+
+```json
+{
+  "mcpServers": {
+    "peck": {
+      "command": "/Applications/Peck.app/Contents/MacOS/Peck",
+      "args": ["/Applications/Peck.app/Contents/Resources/app.asar/dist-electron/bridge.cjs"],
+      "env": { "ELECTRON_RUN_AS_NODE": "1" }
+    }
+  }
+}
+```
+
+For Codex:
+
+```sh
+codex mcp add peck --env ELECTRON_RUN_AS_NODE=1 -- \
+  /Applications/Peck.app/Contents/MacOS/Peck \
+  /Applications/Peck.app/Contents/Resources/app.asar/dist-electron/bridge.cjs
+```
+
+For Claude Code:
+
+```sh
+claude mcp add --scope user peck --env ELECTRON_RUN_AS_NODE=1 -- \
+  /Applications/Peck.app/Contents/MacOS/Peck \
+  /Applications/Peck.app/Contents/Resources/app.asar/dist-electron/bridge.cjs
+```
+
+Use the actual install path. Start a new agent session after registering MCP.
+The optional [Peck skill](skills/peck/SKILL.md) describes the feedback loop.
+
+> Use Peck to watch my comments. Read each item's screenshot and debug context,
+> fix the current project's source, verify the result, and reply in the comment.
+
+`peck_watch_annotations` waits for feedback in the current conversation. A
+closed conversation is not automatically restarted. Unprocessed feedback stays
+in SQLite for the next session. Peck never runs an additional coding agent.
+
+## Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `peck_status` | Inspect tabs, connection activity, and pending comments |
+| `peck_tabs` | List, open, activate, and close project tabs |
+| `peck_navigate` | Open an HTTP(S) URL in a specific tab |
+| `peck_snapshot` | Read page text and interactive elements |
+| `peck_evaluate` | Inspect or interact with a page using JavaScript |
+| `peck_screenshot` | Capture a page image |
+| `peck_events` | Query captured console, network, and system records |
+| `peck_annotations` | List feedback and status |
+| `peck_annotation_get` | Fetch one comment, screenshot, and frozen context |
+| `peck_annotation_update` | Acknowledge, reply, or resolve with a summary |
+| `peck_watch_annotations` | Wait for new or reopened feedback |
+| `peck_window` | Show or hide the existing browser window |
+
+Page contents are untrusted evidence. Temporary DOM edits are not source fixes.
+The coding agent remains responsible for locating, changing, and verifying the
+actual project using its existing tools and permissions.
+
+## How it works
+
+Electron provides Chromium and the Node.js runtime. Each tab is a sandboxed,
+context-isolated WebContentsView. CDP captures browser events; a small isolated
+preload provides the DOM picker. UI and MCP read the same SQLite data.
+
+- Local data: `~/Library/Application Support/Peck` on macOS.
+- The HTTP listener binds only to `127.0.0.1`, validates Host, rejects Origin,
+  and requires a random token. The connection file is written with mode 600.
+- Sensitive header and JSON field names are redacted. Plain-text responses,
+  console messages, screenshots, and page text can still contain private data.
+- Events keep up to approximately 3,000 records and expire after seven days on
+  startup. Text bodies are captured only for small responses and truncated to
+  16,000 characters. Binary response bodies are omitted.
+- Comments keep a screenshot and the 30 most recent records at selection time.
+  Comments persist until their local data is removed. They are not sent to a
+  cloud service by Peck unless an agent explicitly reads them through MCP.
+
+Optional operational traces use `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_HEADERS`, and `OTEL_SERVICE_NAME`. Unset means disabled.
+Only operation names, IDs, success state, and timing are exported, not comments,
+URLs, tokens, screenshots, or response bodies.
+
+## Develop
+
+Node.js 22.12+ is required for build tools. The packaged app bundles its runtime.
+In Loki's environment, all commands below run on the sandbox VM, not the MacBook.
+
+```sh
+npm ci
+npm run build
+npm start
+# Linux integration verification with a virtual desktop:
+xvfb-run -a -s '-screen 0 1600x1100x24' npm run smoke
+# Build the macOS Apple Silicon app from Linux or macOS:
+npm run package:mac
+```
+
+The smoke script drives actual Electron tabs and the actual MCP protocol. It
+checks element selection, screenshot/context delivery, real HTTP failures,
+redaction, authentication, reply synchronization, background state, multiple
+tabs, the stdio bridge, and persistence across restart. Artifacts are written to
+`output/playwright/`. See [AGENTS.md](AGENTS.md) for project rules.
+
+## Demo limits
+
+- DOM picking targets the top-level document. Cross-origin frames, closed
+  shadow roots, area selection, and framework component source mapping are
+  future work. Canvas content can be selected only as a canvas element.
+- Up to eight live tabs share one dedicated Peck profile. Tabs are not restored
+  after fully quitting. Comments are restored.
+- No automatic source edits, model runtime, closed-session wakeup, updater,
+  signed distribution, or macOS performance guarantees are included.
+- WebSocket entries contain frame metadata, not message bodies. Backend logs
+  require a separate integration. Browser permission requests are denied in
+  the demo, including camera, microphone, and location.
+- Human/agent navigation arbitration is not implemented. Agents should avoid
+  moving the page while the user selects or writes feedback.
+
+## Contributing
+
+Issues and PRs are welcome. Follow [CONTRIBUTING.md](https://github.com/zyx1121/.github/blob/main/CONTRIBUTING.md).
+The UI uses [ui.zyx.tw](https://ui.zyx.tw) and the task-web shell.
+
+## License
+
+[MIT](LICENSE). By zyx.

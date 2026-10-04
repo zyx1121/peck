@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a -s '-screen 0 1600x1100x24' npm run smoke
+      - if: runner.os == 'macOS'
+        run: npm run package:mac
+      - if: runner.os == 'macOS'
+        run: npm run smoke
+        env:
+          PECK_EXECUTABLE_PATH: release/Peck-darwin-arm64/Peck.app/Contents/MacOS/Peck
+          PECK_BRIDGE_PATH: release/Peck-darwin-arm64/Peck.app/Contents/Resources/app.asar/dist-electron/bridge.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-${{ matrix.os }}
+          path: output/playwright/
+      - if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent release/Peck-darwin-arm64/Peck.app release/Peck-macos-arm64.zip
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: Peck-macos-arm64
+          path: release/Peck-macos-arm64.zip
