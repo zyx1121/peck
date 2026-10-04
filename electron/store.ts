@@ -1,7 +1,12 @@
 import { DatabaseSync } from "node:sqlite"
 import { EventEmitter } from "node:events"
 import { randomUUID } from "node:crypto"
-import type { Annotation, BrowserEvent, PickedElement } from "../src/shared"
+import type {
+  AgentSession,
+  Annotation,
+  BrowserEvent,
+  PickedElement,
+} from "../src/shared"
 const sensitive =
   /authorization|cookie|password|passwd|secret|token|api[-_]?key/i
 export function redact(value: unknown): unknown {
@@ -35,7 +40,8 @@ export class Store extends EventEmitter {
     this.db = new DatabaseSync(path)
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, tab TEXT, time INTEGER, payload TEXT);
-      CREATE TABLE IF NOT EXISTS annotations (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, payload TEXT);`)
+      CREATE TABLE IF NOT EXISTS annotations (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, payload TEXT);
+      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);`)
     this.db
       .prepare("DELETE FROM events WHERE time < ?")
       .run(Date.now() - 7 * 86400000)
@@ -102,6 +108,30 @@ export class Store extends EventEmitter {
       .prepare("SELECT COALESCE(MAX(id), 0) AS id FROM events")
       .get()
     return Number(row?.id ?? 0)
+  }
+  seenAgent(agent: AgentSession) {
+    if (this.closed) return
+    const previous = this.agents().find((a) => a.sessionId === agent.sessionId)
+    const next = {
+      ...previous,
+      ...agent,
+      firstSeen: previous?.firstSeen ?? agent.lastSeen,
+    }
+    this.db
+      .prepare("INSERT OR REPLACE INTO agents(session,payload) VALUES(?,?)")
+      .run(agent.sessionId, JSON.stringify(next))
+    this.emit("change")
+  }
+  agents(): AgentSession[] {
+    return this.db
+      .prepare("SELECT payload FROM agents")
+      .all()
+      .map((r) => JSON.parse(String(r.payload)) as AgentSession)
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+  }
+  forgetAgent(sessionId: string) {
+    this.db.prepare("DELETE FROM agents WHERE session=?").run(sessionId)
+    this.emit("change")
   }
   annotations(): Annotation[] {
     return this.db

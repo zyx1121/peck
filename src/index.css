@@ -360,6 +360,27 @@ button {
   border-radius: 8px;
   background: var(--muted);
 }
+.agent-session {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.agent-session > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-session p {
+  margin: 0;
+}
+.agent-session span {
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
 .connection-state {
   display: flex;
   align-items: center;

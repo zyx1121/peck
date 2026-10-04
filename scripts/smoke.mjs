@@ -32,6 +32,8 @@ app.process().stderr.on("data", (d) => {
   if (/Error|Exception|failed/i.test(d.toString())) process.stderr.write(d)
 })
 let client, bridge, vite
+const claudeSession = "11111111-2222-4333-8444-555555555555"
+const codexThread = "019a0000-0000-7000-8000-000000000001"
 async function waitFor(fn, description, timeout = 12000) {
   const limit = Date.now() + timeout
   while (Date.now() < limit) {
@@ -737,10 +739,60 @@ try {
         ...process.env,
         PECK_DATA_DIR: dataPath,
         ELECTRON_RUN_AS_NODE: "1",
+        CLAUDECODE: "1",
+        CLAUDE_CODE_SESSION_ID: claudeSession,
       },
     })
   )
   assert.equal((await bridge.listTools()).tools.length, 18)
+  // The bridge registers its Claude Code conversation, and every result
+  // tells an agent about pending comments.
+  const bridged = await bridge.callTool({ name: "peck_status", arguments: {} })
+  assert.ok(
+    bridged.content.at(-1).text.includes("pending comment"),
+    JSON.stringify(bridged.content.at(-1))
+  )
+  await bridge.callTool({
+    name: "peck_watch_annotations",
+    arguments: { timeoutMs: 200 },
+  })
+  // Codex sends its thread id in each call's _meta.
+  const codex = new Client({ name: "codex-mcp-client", version: "1.0.0" })
+  await codex.connect(
+    new StreamableHTTPClientTransport(new URL(config.url), {
+      requestInit: {
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          "x-peck-agent": encodeURIComponent(
+            JSON.stringify({
+              agent: "codex",
+              cwd: process.cwd(),
+              pid: process.pid,
+            })
+          ),
+        },
+      },
+    })
+  )
+  await codex.callTool({
+    name: "peck_status",
+    arguments: {},
+    _meta: { "x-codex-turn-metadata": { threadId: codexThread } },
+  })
+  await codex.close()
+  const agents = parse(await call("peck_status")).agents
+  const claude = agents.find((a) => a.sessionId === claudeSession)
+  assert.equal(claude.agent, "claude-code")
+  assert.equal(claude.cwd, process.cwd())
+  assert.equal(claude.pid, process.pid)
+  assert.ok(claude.lastWatch)
+  assert.equal(agents.find((a) => a.sessionId === codexThread)?.agent, "codex")
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items[0].submenu.items[0].click()
+  )
+  await shell
+    .getByText(`Claude Code · ${claudeSession.slice(0, 8)}`, { exact: true })
+    .waitFor()
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
@@ -777,6 +829,7 @@ try {
           "source locations from attributes and React owner stacks",
           "removable dev plugin with tagged server events",
           "dev server records linked to network records",
+          "agent session registry and pending comment hints",
           "bundled stdio bridge",
         ],
       },
@@ -803,6 +856,17 @@ try {
   const shell = await shellOf(restarted)
   await shell.getByText("把標題改成中文，字小一點。", { exact: true }).waitFor()
   console.log("PASS: SQLite annotation persistence after restart")
+  // Registered conversations persist, and can be removed.
+  await restarted.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items[0].submenu.items[0].click()
+  )
+  const session = shell.locator(".agent-session", {
+    hasText: `Claude Code · ${claudeSession.slice(0, 8)}`,
+  })
+  await session.waitFor()
+  await session.getByRole("button", { name: "移除" }).click()
+  await session.waitFor({ state: "detached" })
+  console.log("PASS: agent session registry persists and clears")
 } finally {
   await restarted.close()
 }

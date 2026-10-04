@@ -44,6 +44,16 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   void boot()
 }
+// Whether an agent CLI process still runs; EPERM means it exists.
+function alive(pid?: number) {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
 async function boot() {
   await app.whenReady()
   const dataPath = app.getPath("userData")
@@ -60,6 +70,14 @@ async function boot() {
       fullscreen: session.window.isFullScreen(),
       selection: session.selection,
       picking: session.picking,
+      agents: store
+        .agents()
+        .slice(0, 5)
+        .map((a) => ({
+          ...a,
+          running: alive(a.pid),
+          watching: mcp.watching.has(a.sessionId),
+        })),
       annotations: store.annotations().map((a) => ({
         ...a,
         screenshot: undefined,
@@ -392,6 +410,9 @@ async function boot() {
             "重新開啟，請再檢查。",
             "user"
           )
+        case "forget-agent":
+          store.forgetAgent(z.string().max(200).parse(args.sessionId))
+          return
         case "annotation-image":
           return store.get(z.string().parse(args.id)).screenshot ?? null
         case "reply-image":
