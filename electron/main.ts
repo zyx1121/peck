@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, shell } from "electron"
-import { mkdirSync, writeFileSync, unlinkSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
+import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
 import { Browser } from "./browser"
@@ -103,12 +104,25 @@ async function boot() {
     else browser.current(id).window.hide()
     push()
   }
+  // The dev plugin's token: Peck sends it when pulling dev server events.
+  const tokenFile = join(dataPath, "dev-token")
+  let devToken = ""
+  try {
+    devToken = readFileSync(tokenFile, "utf8").trim()
+  } catch {
+    /* Created below. */
+  }
+  if (!/^[0-9a-f]{64}$/.test(devToken)) {
+    devToken = randomBytes(32).toString("hex")
+    writeFileSync(tokenFile, devToken, { mode: 0o600 })
+  }
   const mcp = await startMcp(
     browser,
     store,
     visibility,
     push,
-    (id) => !!sessions.get(id)?.picking
+    (id) => !!sessions.get(id)?.picking,
+    devToken
   )
   const connectionFile = join(dataPath, "connection.json")
   writeFileSync(
