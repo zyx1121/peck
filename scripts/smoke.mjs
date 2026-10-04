@@ -8,6 +8,8 @@ import { resolve } from "node:path"
 import { request } from "node:http"
 import { createServer } from "node:net"
 import { spawn } from "node:child_process"
+import { homedir } from "node:os"
+import { Command } from "commander"
 
 const output = resolve("output/playwright")
 const dataPath = resolve("output/smoke-profile")
@@ -38,7 +40,7 @@ await mkdir(resolve("output/fake-agents"), { recursive: true })
 for (const name of ["claude", "codex"])
   await writeFile(
     resolve(`output/fake-agents/${name}`),
-    `#!/bin/sh\nprintf '%s\\n' "${name}" "$PWD" "$@" >> "$PECK_FAKE_AGENT_OUT"\n`,
+    `#!/bin/sh\nprintf '%s\\n' call "$$" "$PWD" "$@" end >> "$PECK_FAKE_AGENT_OUT"\n[ -f "$PECK_FAKE_AGENT_OUT.sleep" ] && sleep 60\nexit 0\n`,
     { mode: 0o755 }
   )
 const started = Date.now()
@@ -51,6 +53,9 @@ let client, bridge, vite
 const claudeSession = "11111111-2222-4333-8444-555555555555"
 const codexThread = "019a0000-0000-7000-8000-000000000001"
 const wakeSession = "22222222-3333-4444-8555-666666666666"
+const homeSession = "33333333-4444-4555-8666-777777777777"
+const liveSession = "44444444-5555-4666-8777-888888888888"
+let quitSleeper
 async function waitFor(fn, description, timeout = 12000) {
   const limit = Date.now() + timeout
   while (Date.now() < limit) {
@@ -813,15 +818,15 @@ try {
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
-  // Resume: a stopped conversation in an opted-in project is resumed with
-  // narrow permissions when the user adds feedback, and only then.
+  // Resume: a stopped conversation the user opted in is resumed with narrow
+  // permissions on user feedback, and only then.
   const stoppedPid = await new Promise((done) => {
     const child = spawn(process.execPath, ["-e", ""])
     child.on("exit", () => done(child.pid))
   })
   const wakeProject = resolve("output/wake-project")
   await mkdir(wakeProject, { recursive: true })
-  const register = async (pid) => {
+  const register = async (sessionId, pid, cwd = wakeProject) => {
     const agent = new Client({ name: "wake-smoke", version: "1.0.0" })
     await agent.connect(
       new StreamableHTTPClientTransport(new URL(config.url), {
@@ -829,12 +834,7 @@ try {
           headers: {
             Authorization: `Bearer ${config.token}`,
             "x-peck-agent": encodeURIComponent(
-              JSON.stringify({
-                agent: "claude-code",
-                sessionId: wakeSession,
-                cwd: wakeProject,
-                pid,
-              })
+              JSON.stringify({ agent: "claude-code", sessionId, cwd, pid })
             ),
           },
         },
@@ -843,15 +843,15 @@ try {
     await agent.callTool({ name: "peck_status", arguments: {} })
     await agent.close()
   }
-  await register(stoppedPid)
-  const calls = async () =>
-    (
-      await readFile(resolve("output/fake-agents/calls.txt"), "utf8").catch(
-        () => ""
-      )
-    )
-      .split("\n")
-      .filter((line) => line === "claude").length
+  const fakeOut = resolve("output/fake-agents/calls.txt")
+  const runs = async () =>
+    (await readFile(fakeOut, "utf8").catch(() => ""))
+      .split("call\n")
+      .slice(1)
+      .map((block) => {
+        const [pid, cwd, ...args] = block.split("\n").slice(0, -2)
+        return { pid: Number(pid), cwd, args }
+      })
   const addFeedback = async (text) => {
     await shell.getByRole("tab", { name: /^留言/ }).click()
     const reply = shell.getByRole("textbox", { name: "回覆留言" }).first()
@@ -859,44 +859,75 @@ try {
     await reply.press("Enter")
     await shell.getByText(text, { exact: true }).first().waitFor()
   }
+  const settle = () => new Promise((r) => setTimeout(r, 1500))
+  const openMcpPanel = () =>
+    app.evaluate(({ Menu }) =>
+      Menu.getApplicationMenu().items[0].submenu.items[0].click()
+    )
+  const toggle = async (sessionId, on) => {
+    await openMcpPanel()
+    const box = shell
+      .locator(".agent-session", {
+        hasText: `Claude Code · ${sessionId.slice(0, 8)}`,
+      })
+      .getByRole("checkbox")
+    await box.click()
+    await waitFor(
+      async () => (await box.isChecked()) === on,
+      `auto-resume ${on ? "on" : "off"}`
+    )
+  }
+  await register(wakeSession, stoppedPid)
+  // Off by default.
   await addFeedback("先不要自動接回。")
-  await new Promise((r) => setTimeout(r, 1500))
-  assert.equal(await calls(), 0, "Resumed without opting in")
-  await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu().items[0].submenu.items[0].click()
+  await settle()
+  assert.equal((await runs()).length, 0, "Resumed without opting in")
+  // The home directory cannot be opted in.
+  await register(homeSession, stoppedPid, homedir())
+  await assert.rejects(
+    shell.evaluate(
+      (sessionId) =>
+        window.peck.invoke("auto-resume", { sessionId, enabled: true }),
+      homeSession
+    )
   )
-  const wakeRow = shell.locator(".agent-session", {
-    hasText: `Claude Code · ${wakeSession.slice(0, 8)}`,
-  })
-  // The box reflects Peck's saved setting, so wait for the round trip.
-  const autoResume = wakeRow.getByRole("checkbox")
-  await autoResume.click()
-  await waitFor(() => autoResume.isChecked(), "auto-resume on")
-  await wakeRow
-    .locator(".agent-command", { hasText: `claude -p --resume ${wakeSession}` })
+  await toggle(wakeSession, true)
+  await shell
+    .locator(".agent-command", { hasText: `--resume=${wakeSession}` })
     .waitFor()
   await addFeedback("現在可以接回了。")
-  await waitFor(async () => (await calls()) === 1, "resumed agent run")
-  const invocation = (
-    await readFile(resolve("output/fake-agents/calls.txt"), "utf8")
-  )
-    .trim()
-    .split("\n")
-  assert.deepEqual(invocation.slice(0, 11), [
-    "claude",
-    wakeProject,
-    "-p",
-    "--resume",
-    wakeSession,
-    "--permission-mode",
-    "acceptEdits",
-    "--permission-prompts",
-    "none",
-    "--allowedTools",
-    "mcp__peck",
-  ])
-  assert.ok(invocation[11].startsWith("New Peck comments are waiting."))
-  assert.ok(!invocation.join(" ").includes("可以接回"))
+  await waitFor(async () => (await runs()).length === 1, "resumed agent run")
+  const [first] = await runs()
+  assert.equal(first.cwd, wakeProject)
+  // Parse the arguments the way Claude Code's CLI does: --allowedTools
+  // takes several values and must not swallow the prompt.
+  const cli = new Command()
+    .exitOverride()
+    .option("-p, --print")
+    .option("-r, --resume [value]")
+    .option("--permission-mode <mode>")
+    .option("--permission-prompts <target>")
+    .option("--allowedTools, --allowed-tools <tools...>")
+    .argument("[prompt]")
+  cli.parse(first.args, { from: "user" })
+  assert.ok(cli.args[0]?.startsWith("New Peck comments are waiting."))
+  assert.deepEqual(cli.opts(), {
+    print: true,
+    resume: wakeSession,
+    permissionMode: "acceptEdits",
+    permissionPrompts: "none",
+    allowedTools: [
+      "peck_status",
+      "peck_watch_annotations",
+      "peck_annotations",
+      "peck_annotation_get",
+      "peck_annotation_update",
+      "peck_snapshot",
+      "peck_screenshot",
+      "peck_events",
+    ].map((tool) => `mcp__peck__${tool}`),
+  })
+  assert.ok(!first.args.join(" ").includes("可以接回"))
   await waitFor(
     async () =>
       parse(await call("peck_events", { kind: "system" })).some((e) =>
@@ -906,16 +937,41 @@ try {
       ),
     "resume system event"
   )
-  // A running conversation is not resumed again.
-  await register(process.pid)
-  await addFeedback("執行中不要重複接回。")
-  await new Promise((r) => setTimeout(r, 1500))
-  assert.equal(await calls(), 1, "Resumed a running conversation")
-  await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu().items[0].submenu.items[0].click()
+  // An agent putting a comment back to pending is not user feedback.
+  const pendingItem = parse(await call("peck_annotations")).find(
+    (a) => a.status === "pending"
   )
-  await autoResume.click()
-  await waitFor(async () => !(await autoResume.isChecked()), "auto-resume off")
+  await call("peck_annotation_update", {
+    id: pendingItem.id,
+    status: "pending",
+    reply: "Blocked: needs the user.",
+  })
+  await settle()
+  assert.equal((await runs()).length, 1, "An agent status change resumed")
+  // A live conversation in the same directory blocks a second agent.
+  await register(liveSession, process.pid)
+  await addFeedback("同一個專案有對話在跑。")
+  await settle()
+  assert.equal((await runs()).length, 1, "Resumed beside a live conversation")
+  await register(liveSession, stoppedPid)
+  // Turning it off, or quitting Peck, stops a running agent.
+  await writeFile(`${fakeOut}.sleep`, "")
+  await addFeedback("跑久一點。")
+  await waitFor(async () => (await runs()).length === 2, "second agent run")
+  const sleeper = (await runs())[1].pid
+  await toggle(wakeSession, false)
+  await waitFor(() => {
+    try {
+      process.kill(sleeper, 0)
+      return false
+    } catch {
+      return true
+    }
+  }, "stopped agent after opting out")
+  await toggle(wakeSession, true)
+  await addFeedback("關掉 Peck 也要停。")
+  await waitFor(async () => (await runs()).length === 3, "third agent run")
+  quitSleeper = (await runs())[2].pid
   const metrics = await shell.evaluate(() => window.peck.invoke("metrics"))
   await writeFile(
     `${output}/report.json`,
@@ -972,6 +1028,16 @@ try {
   await client?.close()
   await app.close()
 }
+// Quitting Peck stopped the agent it started.
+await waitFor(() => {
+  try {
+    process.kill(quitSleeper, 0)
+    return false
+  } catch {
+    return true
+  }
+}, "stopped agent after quitting Peck")
+await rm(`${resolve("output/fake-agents/calls.txt")}.sleep`, { force: true })
 const restarted = await electron.launch(launchOptions)
 try {
   const shell = await shellOf(restarted)

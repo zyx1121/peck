@@ -71,16 +71,17 @@ async function boot() {
       fullscreen: session.window.isFullScreen(),
       selection: session.selection,
       picking: session.picking,
+      // The five latest conversations, plus every opted-in one, so a
+      // conversation that can be resumed never drops out of view.
       agents: store
         .agents()
-        .slice(0, 5)
+        .filter((a, index) => index < 5 || a.autoResume)
         .map((a) => {
           const run = waker.runs.get(a.sessionId)
           return {
             ...a,
             running: alive(a.pid),
             watching: mcp.watching.has(a.sessionId),
-            autoResume: store.project(a.cwd).autoResume,
             command: describeCommand(a),
             lastRun: run && {
               at: run.at,
@@ -436,14 +437,19 @@ async function boot() {
           const sessionId = z.string().max(200).parse(args.sessionId)
           const agent = store.agents().find((a) => a.sessionId === sessionId)
           if (!agent) throw new Error("Unknown agent session")
-          store.setProject(agent.cwd, {
-            autoResume: z.boolean().parse(args.enabled),
-          })
+          const enabled = z.boolean().parse(args.enabled)
+          if (enabled && !describeCommand(agent))
+            throw new Error("This conversation cannot be resumed")
+          store.setAgentResume(sessionId, enabled)
+          if (!enabled) waker.stop(sessionId)
           return
         }
-        case "forget-agent":
-          store.forgetAgent(z.string().max(200).parse(args.sessionId))
+        case "forget-agent": {
+          const sessionId = z.string().max(200).parse(args.sessionId)
+          waker.stop(sessionId)
+          store.forgetAgent(sessionId)
           return
+        }
         case "annotation-image":
           return store.get(z.string().parse(args.id)).screenshot ?? null
         case "reply-image":

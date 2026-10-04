@@ -33,8 +33,8 @@ When the user asks to watch comments, repeatedly call `peck_watch_annotations`
 with `afterSequence: 0` and `timeoutMs: 25000`. Process pending items as above,
 then wait again. This also catches reopened comments. Acknowledge before work
 so it is not processed twice. Stop when the user says to stop. If the user
-turned on resume for the project, Peck may start this conversation again with
-a prompt that comments are waiting; process them, then stop.
+turned on resume for this conversation, Peck may start it again with a prompt
+that comments are waiting; process them, then stop.
 
 Each page has its own window; its `tabId` selects it in every tool. Use it when
 more than one page is open. Do not navigate the user's active page while they

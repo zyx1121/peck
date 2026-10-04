@@ -88,20 +88,24 @@ pending comments, so a conversation that stopped watching still notices them.
 Unprocessed feedback stays in SQLite for the next session.
 
 To have new feedback resume a stopped conversation, turn on
-**新留言時接回這個對話** for it under Local MCP. This is off by default and set
-per project directory. When a comment arrives, nothing is watching, and that
-conversation's process has ended, Peck runs the command shown under the
-checkbox in the project directory:
+**新留言時接回這個對話** for it under Local MCP. This is off by default, set per
+conversation, and not available for the home directory or the file system
+root. When you add a comment, reply, or reopen one, nothing is watching, and
+no agent runs in that conversation's directory, Peck runs the command shown
+under the checkbox there:
 
-- Claude Code: `claude -p --resume <id> --permission-mode acceptEdits
-  --permission-prompts none --allowedTools mcp__peck "<prompt>"`
-- Codex: `codex exec --sandbox workspace-write resume <id> "<prompt>"`
+- Claude Code: `claude -p --resume=<id> --permission-mode=acceptEdits
+  --permission-prompts=none --allowedTools=mcp__peck__<tool> ... -- "<prompt>"`
+- Codex: `codex exec --sandbox workspace-write resume -- <id> "<prompt>"`
 
 The prompt only says that comments are waiting; the agent reads them through
-MCP. Edits are accepted, Peck's tools are allowed, and anything else that
-needs approval is denied. Peck runs one at a time, backs off after failures,
-logs each run as a system record, and keeps run output in
-`agent-runs/` under its data directory. Peck never starts a new agent.
+MCP. Edits are accepted, and only Peck's tools for reading and answering
+comments and looking at the page are allowed; anything else that needs
+approval is denied. An agent changing a comment's status never starts a run.
+Peck runs one at a time, backs off after failures, stops the run when you
+turn the setting off or quit Peck, logs each run as a system record, and
+keeps run output in `agent-runs/` under its data directory. Peck never starts
+a new agent.
 
 ## Dev plugin
 

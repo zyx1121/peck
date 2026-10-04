@@ -41,8 +41,7 @@ export class Store extends EventEmitter {
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, tab TEXT, time INTEGER, payload TEXT);
       CREATE TABLE IF NOT EXISTS annotations (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, payload TEXT);
-      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);
-      CREATE TABLE IF NOT EXISTS projects (cwd TEXT PRIMARY KEY, payload TEXT);`)
+      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);`)
     this.db
       .prepare("DELETE FROM events WHERE time < ?")
       .run(Date.now() - 7 * 86400000)
@@ -73,6 +72,7 @@ export class Store extends EventEmitter {
     return { id, ...data } as BrowserEvent
   }
   events(tabId?: string, limit = 150): BrowserEvent[] {
+    if (this.closed) return []
     const rows = tabId
       ? this.db
           .prepare(
@@ -88,6 +88,7 @@ export class Store extends EventEmitter {
   }
   // Oldest first after a cursor, so an agent can page forward.
   eventsAfter(afterId: number, tabId?: string, limit = 500): BrowserEvent[] {
+    if (this.closed) return []
     const rows = tabId
       ? this.db
           .prepare(
@@ -105,6 +106,7 @@ export class Store extends EventEmitter {
     }))
   }
   lastEventId() {
+    if (this.closed) return 0
     const row = this.db
       .prepare("SELECT COALESCE(MAX(id), 0) AS id FROM events")
       .get()
@@ -124,33 +126,29 @@ export class Store extends EventEmitter {
     this.emit("change")
   }
   agents(): AgentSession[] {
+    if (this.closed) return []
     return this.db
       .prepare("SELECT payload FROM agents")
       .all()
       .map((r) => JSON.parse(String(r.payload)) as AgentSession)
       .sort((a, b) => b.lastSeen - a.lastSeen)
   }
-  // Per-project settings, keyed by the agent's working directory.
-  project(cwd: string): { autoResume: boolean } {
-    const row = this.db
-      .prepare("SELECT payload FROM projects WHERE cwd=?")
-      .get(cwd)
-    return {
-      autoResume: false,
-      ...(row ? JSON.parse(String(row.payload)) : {}),
-    }
-  }
-  setProject(cwd: string, settings: { autoResume: boolean }) {
+  // Opt a conversation in or out of being resumed on new feedback.
+  setAgentResume(sessionId: string, enabled: boolean) {
+    const agent = this.agents().find((a) => a.sessionId === sessionId)
+    if (!agent) throw new Error("Unknown agent session")
     this.db
-      .prepare("INSERT OR REPLACE INTO projects(cwd,payload) VALUES(?,?)")
-      .run(cwd, JSON.stringify(settings))
+      .prepare("UPDATE agents SET payload=? WHERE session=?")
+      .run(JSON.stringify({ ...agent, autoResume: enabled }), sessionId)
     this.emit("change")
+    return agent
   }
   forgetAgent(sessionId: string) {
     this.db.prepare("DELETE FROM agents WHERE session=?").run(sessionId)
     this.emit("change")
   }
   annotations(): Annotation[] {
+    if (this.closed) return []
     return this.db
       .prepare(
         "SELECT sequence,payload FROM annotations ORDER BY sequence DESC LIMIT 300"
@@ -195,6 +193,8 @@ export class Store extends EventEmitter {
       .run(item.id, JSON.stringify(item))
     item.sequence = Number(result.lastInsertRowid)
     this.emit("annotation", item)
+    // Feedback from the user, as opposed to an agent changing a status.
+    this.emit("feedback", item)
     this.emit("change")
     return item
   }
@@ -227,6 +227,8 @@ export class Store extends EventEmitter {
         .run(JSON.stringify(item), id)
     }
     if (item.status === "pending") this.emit("annotation", item)
+    if (author === "user" && (reply || status === "pending"))
+      this.emit("feedback", item)
     this.emit("change")
     return item
   }
