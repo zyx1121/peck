@@ -611,6 +611,64 @@ try {
     })
     assert.equal(failed.status, 500)
     assert.equal((await fetch(`${origin}/__peck/events`)).status, 404)
+    // Peck sees the plugin, tags the page's requests, and links the dev
+    // server's records to the network record.
+    await call("peck_navigate", { url: `${origin}/` })
+    await call("peck_wait", { until: "selector", value: "#save" })
+    await call("peck_click", { selector: "#save" })
+    const linked = await waitFor(
+      async () => {
+        const events = parse(await call("peck_events", { limit: 300 }))
+        const request = events.find(
+          (e) =>
+            e.kind === "network" &&
+            e.message.startsWith("POST") &&
+            e.message.includes("/api/fail") &&
+            e.details.peckRequestId
+        )
+        const server =
+          request &&
+          events.find(
+            (e) =>
+              e.kind === "server" &&
+              e.details.peckRequestId === request.details.peckRequestId &&
+              e.message.includes("workspace is locked")
+          )
+        return server && { request, server }
+      },
+      "linked dev server record",
+      20000
+    )
+    assert.equal(linked.request.details.status, 500)
+    await shell.getByRole("tab", { name: /^Network/ }).click()
+    await shell.locator(".event", { hasText: "/api/fail" }).first().click()
+    await shell
+      .locator(".server-records", { hasText: "workspace is locked" })
+      .first()
+      .waitFor()
+    await shell.getByRole("tab", { name: /^留言/ }).click()
+    // A comment's frozen context carries the linked server records.
+    await shell.getByRole("button", { name: "選取元件", exact: true }).click()
+    await shell
+      .locator('[aria-label="選取元件"][aria-pressed="true"]')
+      .waitFor()
+    await guest.locator("#title").click()
+    await shell.getByRole("textbox", { name: "修改意見" }).fill("儲存會失敗。")
+    await shell.getByRole("button", { name: "送出留言", exact: true }).click()
+    const saved = await waitFor(
+      async () =>
+        parse(await call("peck_annotations")).find(
+          (a) => a.comment === "儲存會失敗。"
+        ),
+      "comment with server context"
+    )
+    assert.ok(
+      parse(await call("peck_annotation_get", { id: saved.id })).context.some(
+        (e) =>
+          e.kind === "server" &&
+          e.details.peckRequestId === linked.request.details.peckRequestId
+      )
+    )
     await waitFor(async () => {
       const body = await (
         await fetch(`${origin}/__peck/events?after=0`, {
@@ -718,6 +776,7 @@ try {
           "after screenshots in agent replies",
           "source locations from attributes and React owner stacks",
           "removable dev plugin with tagged server events",
+          "dev server records linked to network records",
           "bundled stdio bridge",
         ],
       },

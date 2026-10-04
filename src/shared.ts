@@ -29,7 +29,7 @@ export interface BrowserEvent {
   id: number
   tabId: string
   time: number
-  kind: "console" | "network" | "system"
+  kind: "console" | "network" | "system" | "server"
   level: string
   message: string
   details: Record<string, unknown>

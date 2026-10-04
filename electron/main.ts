@@ -3,7 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
 import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
-import { Browser } from "./browser"
+import { Browser, originOf } from "./browser"
+import { DevServers } from "./devserver"
 import { Store, safeUrl } from "./store"
 import { startMcp } from "./mcp"
 import { telemetry } from "./telemetry"
@@ -124,6 +125,18 @@ async function boot() {
     (id) => !!sessions.get(id)?.picking,
     devToken
   )
+  const devServers = new DevServers(
+    store,
+    devToken,
+    (origin) =>
+      browser
+        .list()
+        .filter((t) => originOf(t.url) === origin)
+        .map((t) => t.id),
+    (origin) => browser.stamped.get(origin),
+    (origin) => browser.devOrigins.delete(origin)
+  )
+  browser.on("devserver", (origin: string) => devServers.watch(origin))
   const connectionFile = join(dataPath, "connection.json")
   writeFileSync(
     connectionFile,
@@ -199,6 +212,7 @@ async function boot() {
     quitting = true
     if (pushTimer) clearTimeout(pushTimer)
     mcp.close()
+    devServers.close()
     browser.destroy()
     store.close()
     try {

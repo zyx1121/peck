@@ -1,4 +1,9 @@
-import { WebContentsView, BrowserWindow, type WebContents } from "electron"
+import {
+  WebContentsView,
+  BrowserWindow,
+  session as electronSession,
+  type WebContents,
+} from "electron"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { EventEmitter } from "node:events"
@@ -20,6 +25,13 @@ export function webUrl(input: string) {
     )
   return url.toString()
 }
+export function originOf(url: string) {
+  try {
+    return new URL(url).origin
+  } catch {
+    return ""
+  }
+}
 export class Browser extends EventEmitter {
   tabs = new Map<
     string,
@@ -35,8 +47,43 @@ export class Browser extends EventEmitter {
   // Per-window capture queue, and windows the user showed during a capture.
   private captures = new Map<string, Promise<unknown>>()
   private shownDuringCapture = new Set<string>()
+  // Origins whose dev server runs Peck's dev plugin, and the request ids
+  // Peck stamped on requests to them.
+  devOrigins = new Set<string>()
+  stamped = new Map<string, Set<string>>()
+  private stamps = 0
   constructor(private store: Store) {
     super()
+    // Tag requests to a dev plugin origin from a page on that origin, so
+    // dev server events link to the network record that caused them.
+    electronSession
+      .fromPartition("persist:peck")
+      .webRequest.onBeforeSendHeaders((details, callback) => {
+        const origin = originOf(details.url)
+        const tab = [...this.tabs.values()].find(
+          (t) =>
+            !t.view.webContents.isDestroyed() &&
+            t.view.webContents.id === details.webContentsId
+        )
+        if (
+          !tab ||
+          !this.devOrigins.has(origin) ||
+          (details.resourceType !== "mainFrame" &&
+            originOf(tab.info.url) !== origin)
+        )
+          return callback({})
+        const id = `pk-${Date.now().toString(36)}-${++this.stamps}`
+        const ids = this.stamped.get(origin) ?? new Set<string>()
+        ids.add(id)
+        if (ids.size > 500) ids.delete(ids.values().next().value!)
+        this.stamped.set(origin, ids)
+        callback({
+          requestHeaders: {
+            ...details.requestHeaders,
+            "x-peck-request-id": id,
+          },
+        })
+      })
   }
   current(id = this.activeId) {
     const tab = this.tabs.get(id)
@@ -229,8 +276,19 @@ export class Browser extends EventEmitter {
         response?: Record<string, unknown>
       }
     >()
+    // Request ids stamped for the dev plugin, read from the headers that
+    // were actually sent.
+    const stampedIds = new Map<string, string>()
     contents.debugger.on("message", async (_, method, params) => {
       try {
+        if (method === "Network.requestWillBeSentExtraInfo") {
+          const stamp = params.headers?.["x-peck-request-id"]
+          if (stamp) {
+            stampedIds.set(params.requestId, String(stamp))
+            if (stampedIds.size > 500)
+              stampedIds.delete(stampedIds.keys().next().value!)
+          }
+        }
         if (method === "Runtime.exceptionThrown") {
           const e = params.exceptionDetails
           this.store.event(
@@ -268,6 +326,14 @@ export class Browser extends EventEmitter {
           })
         }
         if (method === "Network.responseReceived") {
+          const origin = originOf(params.response.url)
+          if (
+            params.response.headers?.["x-peck-dev"] &&
+            !this.devOrigins.has(origin)
+          ) {
+            this.devOrigins.add(origin)
+            this.emit("devserver", origin)
+          }
           const item = requests.get(params.requestId)
           if (item)
             item.response = {
@@ -330,8 +396,10 @@ export class Browser extends EventEmitter {
               bytes: params.encodedDataLength,
               responseBody: body,
               error: params.errorText,
+              peckRequestId: stampedIds.get(params.requestId),
             }
           )
+          stampedIds.delete(params.requestId)
         }
         if (
           method === "Network.webSocketFrameReceived" ||

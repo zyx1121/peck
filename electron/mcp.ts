@@ -267,10 +267,10 @@ export async function startMcp(
     )
     tool(
       "peck_events",
-      "Read captured console, exception, request/response, or system records. Without afterId, returns the most recent records. With afterId (an event id, or lastEventId from peck_status taken before acting), returns only newer records, oldest first. Sensitive header keys are redacted; payload capture is bounded.",
+      "Read captured console, exception, request/response, system, or dev server records. Server records come from Peck's dev plugin and carry peckRequestId, which matches the network record of the request that caused them. Without afterId, returns the most recent records. With afterId (an event id, or lastEventId from peck_status taken before acting), returns only newer records, oldest first. Sensitive header keys are redacted; payload capture is bounded.",
       {
         tabId: z.string().optional(),
-        kind: z.enum(["console", "network", "system"]).optional(),
+        kind: z.enum(["console", "network", "system", "server"]).optional(),
         afterId: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(300).default(80),
       },
