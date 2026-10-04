@@ -39,6 +39,10 @@ more than one page is open. Do not navigate the user's active page while they
 are selecting or writing a comment. Show a window with `peck_window` when review
 is useful. Hide it only when requested.
 
+For framework errors, call `peck_dev_server`. On Next.js 16 it reaches the
+dev server's built-in MCP (compile issues, routes, server actions), even when
+the dev server runs on another machine.
+
 Honor the project execution rules. In Loki's environment, installation, build,
 tests, dev servers, and browser automation belong on `ssh sandbox`, not the
 MacBook. The completed Peck desktop application runs on the MacBook for review.
