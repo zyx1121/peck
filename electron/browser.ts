@@ -150,7 +150,14 @@ export class Browser extends EventEmitter {
       setTitle(title)
       this.emit("change")
     })
+    // The internal about:blank document stays out of the UI and history.
+    let phase: "blank" | "first" | "ready" = "blank"
     contents.on("did-navigate", (_, url) => {
+      if (phase === "blank") return
+      if (phase === "first") {
+        phase = "ready"
+        contents.navigationHistory.clear()
+      }
       info.url = safeUrl(url)
       // A new document starts with the URL as its title until <title> loads.
       info.title = contents.getTitle()
@@ -345,6 +352,7 @@ export class Browser extends EventEmitter {
       if (!this.activeId || visible) this.activeId = id
       if (visible) window.show()
       this.emit("change")
+      phase = "first"
       void contents
         .loadURL(target)
         .catch((error) =>

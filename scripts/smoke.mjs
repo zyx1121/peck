@@ -113,6 +113,11 @@ try {
   )
   const tools = await client.listTools()
   assert.equal(tools.tools.length, 12)
+  // A new window starts its history at the requested page.
+  const firstPage = parse(await call("peck_status")).tabs[0]
+  assert.ok(firstPage.url.endsWith("/demo"))
+  assert.equal(firstPage.canGoBack, false)
+  assert.ok(await shell.getByRole("button", { name: "上一頁" }).isDisabled())
   assert.equal(
     (await fetch(config.url, { method: "POST", body: "{}" })).status,
     403
