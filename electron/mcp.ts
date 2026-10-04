@@ -42,7 +42,7 @@ export function caller(extra: Extra): AgentSession | undefined {
   const cwd = info.cwd
   if (
     typeof sessionId !== "string" ||
-    !/^[A-Za-z0-9_-]{8,128}$/.test(sessionId) ||
+    !/^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(sessionId) ||
     typeof cwd !== "string" ||
     !cwd.startsWith("/")
   )

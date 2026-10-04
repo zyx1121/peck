@@ -72,6 +72,7 @@ export class Store extends EventEmitter {
     return { id, ...data } as BrowserEvent
   }
   events(tabId?: string, limit = 150): BrowserEvent[] {
+    if (this.closed) return []
     const rows = tabId
       ? this.db
           .prepare(
@@ -87,6 +88,7 @@ export class Store extends EventEmitter {
   }
   // Oldest first after a cursor, so an agent can page forward.
   eventsAfter(afterId: number, tabId?: string, limit = 500): BrowserEvent[] {
+    if (this.closed) return []
     const rows = tabId
       ? this.db
           .prepare(
@@ -104,6 +106,7 @@ export class Store extends EventEmitter {
     }))
   }
   lastEventId() {
+    if (this.closed) return 0
     const row = this.db
       .prepare("SELECT COALESCE(MAX(id), 0) AS id FROM events")
       .get()
@@ -123,17 +126,29 @@ export class Store extends EventEmitter {
     this.emit("change")
   }
   agents(): AgentSession[] {
+    if (this.closed) return []
     return this.db
       .prepare("SELECT payload FROM agents")
       .all()
       .map((r) => JSON.parse(String(r.payload)) as AgentSession)
       .sort((a, b) => b.lastSeen - a.lastSeen)
   }
+  // Opt a conversation in or out of being resumed on new feedback.
+  setAgentResume(sessionId: string, enabled: boolean) {
+    const agent = this.agents().find((a) => a.sessionId === sessionId)
+    if (!agent) throw new Error("Unknown agent session")
+    this.db
+      .prepare("UPDATE agents SET payload=? WHERE session=?")
+      .run(JSON.stringify({ ...agent, autoResume: enabled }), sessionId)
+    this.emit("change")
+    return agent
+  }
   forgetAgent(sessionId: string) {
     this.db.prepare("DELETE FROM agents WHERE session=?").run(sessionId)
     this.emit("change")
   }
   annotations(): Annotation[] {
+    if (this.closed) return []
     return this.db
       .prepare(
         "SELECT sequence,payload FROM annotations ORDER BY sequence DESC LIMIT 300"
@@ -178,6 +193,8 @@ export class Store extends EventEmitter {
       .run(item.id, JSON.stringify(item))
     item.sequence = Number(result.lastInsertRowid)
     this.emit("annotation", item)
+    // Feedback from the user, as opposed to an agent changing a status.
+    this.emit("feedback", item)
     this.emit("change")
     return item
   }
@@ -210,6 +227,8 @@ export class Store extends EventEmitter {
         .run(JSON.stringify(item), id)
     }
     if (item.status === "pending") this.emit("annotation", item)
+    if (author === "user" && (reply || status === "pending"))
+      this.emit("feedback", item)
     this.emit("change")
     return item
   }

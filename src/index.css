@@ -381,6 +381,21 @@ button {
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+.auto-resume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.agent-command {
+  display: block;
+  font: 12px/18px var(--font-mono);
+  overflow-wrap: anywhere;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--muted);
+}
 .connection-state {
   display: flex;
   align-items: center;

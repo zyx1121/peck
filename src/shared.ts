@@ -65,6 +65,10 @@ export interface AgentSession {
   lastWatch?: number
   running?: boolean
   watching?: boolean
+  // Resume on new comments, set per project directory.
+  autoResume?: boolean
+  command?: string
+  lastRun?: { at: number; running: boolean; exitCode?: number | null }
 }
 export interface PeckState {
   page: TabInfo
