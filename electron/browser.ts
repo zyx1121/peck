@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events"
 import type { TabInfo } from "../src/shared"
 import { Store, redact, safeUrl } from "./store"
 import * as input from "./input"
+import { describe, met, type Activity, type WaitCondition } from "./wait"
 
 export function webUrl(input: string) {
   const url = new URL(input.includes("://") ? input : `https://${input}`)
@@ -25,6 +26,7 @@ export class Browser extends EventEmitter {
       info: TabInfo
       view: WebContentsView
       window: BrowserWindow
+      activity: Activity
     }
   >()
   activeId = ""
@@ -99,7 +101,13 @@ export class Browser extends EventEmitter {
       canGoBack: false,
       canGoForward: false,
     }
-    this.tabs.set(id, { info, view, window })
+    const activity: Activity = {
+      pending: new Map(),
+      idleSince: Date.now(),
+      navigatedAt: 0,
+      actedAt: 0,
+    }
+    this.tabs.set(id, { info, view, window, activity })
     window.contentView.addChildView(view)
     window.on("focus", () => {
       this.activeId = id
@@ -159,6 +167,7 @@ export class Browser extends EventEmitter {
         phase = "ready"
         contents.navigationHistory.clear()
       }
+      activity.navigatedAt = Date.now()
       info.url = safeUrl(url)
       // A new document starts with the URL as its title until <title> loads.
       info.title = contents.getTitle()
@@ -169,6 +178,7 @@ export class Browser extends EventEmitter {
       this.emit("change")
     })
     contents.on("did-navigate-in-page", (_, url) => {
+      activity.navigatedAt = Date.now()
       info.url = safeUrl(url)
       info.canGoBack = contents.navigationHistory.canGoBack()
       info.canGoForward = contents.navigationHistory.canGoForward()
@@ -234,6 +244,8 @@ export class Browser extends EventEmitter {
         if (method === "Network.requestWillBeSent") {
           const r = params.request
           if (!/^https?:/.test(r.url)) return
+          if (params.type !== "EventSource")
+            activity.pending.set(params.requestId, Date.now())
           if (requests.size >= 500)
             requests.delete(requests.keys().next().value!)
           let body: unknown = r.postData?.slice(0, 16000)
@@ -266,6 +278,11 @@ export class Browser extends EventEmitter {
           method === "Network.loadingFinished" ||
           method === "Network.loadingFailed"
         ) {
+          if (
+            activity.pending.delete(params.requestId) &&
+            !activity.pending.size
+          )
+            activity.idleSince = Date.now()
           const item = requests.get(params.requestId)
           if (!item) return
           requests.delete(params.requestId)
@@ -392,12 +409,19 @@ export class Browser extends EventEmitter {
     this.current(id).window.close()
   }
   async navigate(url: string, id = this.activeId) {
+    this.current(id).activity.actedAt = Date.now()
     await this.current(id).view.webContents.loadURL(webUrl(url))
     return this.current(id).info
   }
   // Run CDP work at full speed, even while the window is hidden.
-  private async awake<T>(id: string, run: (send: input.Send) => Promise<T>) {
-    const c: WebContents = this.current(id).view.webContents
+  private async awake<T>(
+    id: string,
+    run: (send: input.Send) => Promise<T>,
+    action = true
+  ) {
+    const tab = this.current(id)
+    if (action) tab.activity.actedAt = Date.now()
+    const c: WebContents = tab.view.webContents
     this.busy.set(id, (this.busy.get(id) ?? 0) + 1)
     c.setBackgroundThrottling(false)
     try {
@@ -432,6 +456,39 @@ export class Browser extends EventEmitter {
     input.parseKeys(keys)
     await this.awake(id, (send) => input.press(send, keys))
     return { pressed: keys }
+  }
+  async wait(
+    condition: WaitCondition,
+    timeoutMs: number,
+    signal?: AbortSignal,
+    id = this.activeId
+  ) {
+    const { activity, view } = this.current(id)
+    const started = Date.now()
+    // A navigation caused by the latest action can commit before this call.
+    const since = started - activity.actedAt < 5000 ? activity.actedAt : started
+    return this.awake(
+      id,
+      async (send) => {
+        for (;;) {
+          if (signal?.aborted) throw new Error("Wait cancelled")
+          if (!this.tabs.has(id))
+            throw new Error("The page window closed while waiting")
+          if (await met(condition, send, view.webContents, activity, since))
+            return {
+              until: condition.until,
+              elapsedMs: Date.now() - started,
+              url: this.current(id).info.url,
+            }
+          if (Date.now() - started >= timeoutMs)
+            throw new Error(
+              `Timed out after ${timeoutMs} ms waiting for ${describe(condition)}`
+            )
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+      },
+      false
+    )
   }
   pick(enabled: boolean, id = this.activeId) {
     this.current(id).view.webContents.send("peck:pick", enabled)
