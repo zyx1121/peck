@@ -316,6 +316,45 @@ try {
     Number(await guest.locator("#count").textContent()),
     countBefore + 2
   )
+  // Hidden windows: a screenshot shows the current page, including the first
+  // capture of a window opened in the background.
+  await call("peck_evaluate", {
+    expression:
+      "document.body.dataset.peckBackground = document.body.style.background; document.body.style.background = 'rgb(255, 0, 0)'; true",
+  })
+  const hiddenShot = (await call("peck_screenshot")).content.find(
+    (c) => c.type === "image"
+  ).data
+  const corner = await app.evaluate(({ nativeImage }, data) => {
+    const bitmap = nativeImage
+      .createFromBuffer(Buffer.from(data, "base64"))
+      .toBitmap()
+    return [bitmap[2], bitmap[1], bitmap[0]]
+  }, hiddenShot)
+  assert.ok(
+    corner[0] > 200 && corner[1] < 80 && corner[2] < 80,
+    `Stale frame from a hidden window: ${corner}`
+  )
+  assert.equal(
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].isVisible()
+    ),
+    false
+  )
+  const background = parse(
+    await call("peck_tabs", {
+      action: "open",
+      url: config.url.replace("/mcp", "/demo"),
+    })
+  ).at(-1)
+  assert.equal(background.visible, false)
+  await call("peck_screenshot", { tabId: background.id })
+  await call("peck_tabs", { action: "close", tabId: background.id })
+  await waitFor(async () => (await windowCount()) === 1, "closed hidden window")
+  await call("peck_evaluate", {
+    expression:
+      "document.body.style.background = document.body.dataset.peckBackground; true",
+  })
   await call("peck_window", { visible: true })
   const pickButton = shell.getByRole("button", {
     name: "選取元件",
@@ -458,6 +497,7 @@ try {
           "trusted click, type, and key input",
           "waiting for navigation, text, selector, and network idle",
           "event cursor",
+          "fresh screenshots of hidden windows",
           "bundled stdio bridge",
         ],
       },
