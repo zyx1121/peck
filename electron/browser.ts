@@ -31,6 +31,9 @@ export class Browser extends EventEmitter {
   >()
   activeId = ""
   private busy = new Map<string, number>()
+  // Per-window capture queue, and windows the user showed during a capture.
+  private captures = new Map<string, Promise<unknown>>()
+  private shownDuringCapture = new Set<string>()
   constructor(private store: Store) {
     super()
   }
@@ -385,6 +388,7 @@ export class Browser extends EventEmitter {
   }
   activate(id: string) {
     const { window } = this.current(id)
+    if (this.captures.has(id)) this.shownDuringCapture.add(id)
     this.activeId = id
     window.show()
     window.focus()
@@ -494,11 +498,67 @@ export class Browser extends EventEmitter {
     this.current(id).view.webContents.send("peck:pick", enabled)
   }
   async screenshot(id = this.activeId) {
-    const img = await this.current(id).view.webContents.capturePage()
+    const img = await this.capture(id)
     return img
       .resize({ width: Math.min(1280, img.getSize().width) })
       .toJPEG(75)
       .toString("base64")
+  }
+  // A hidden window produces no new frames: a capture returns a stale frame
+  // on macOS and never resolves on Linux. Show the window without the user
+  // seeing it, wait for a fresh frame, capture, then hide it again.
+  private capture(id: string, rect?: Electron.Rectangle) {
+    const run = async () => {
+      const { window, view } = this.current(id)
+      return this.awake(
+        id,
+        async (send) => {
+          if (window.isVisible()) return view.webContents.capturePage(rect)
+          const bounds = window.getBounds()
+          // Linux cannot make a window transparent, so it goes off screen.
+          const offscreen = process.platform === "linux"
+          if (offscreen) window.setPosition(-20000, -20000)
+          else {
+            window.setOpacity(0)
+            window.setIgnoreMouseEvents(true)
+          }
+          window.showInactive()
+          try {
+            await Promise.race([
+              input.evaluate(
+                send,
+                "new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))"
+              ),
+              new Promise((resolve) => setTimeout(resolve, 1000)),
+            ])
+            return await view.webContents.capturePage(rect)
+          } finally {
+            if (!window.isDestroyed()) {
+              if (!this.shownDuringCapture.has(id)) window.hide()
+              if (offscreen) window.setBounds(bounds)
+              else {
+                window.setIgnoreMouseEvents(false)
+                window.setOpacity(1)
+              }
+            }
+          }
+        },
+        false
+      )
+    }
+    const queued = (this.captures.get(id) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(run)
+    this.captures.set(id, queued)
+    void queued
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.captures.get(id) === queued) {
+          this.captures.delete(id)
+          this.shownDuringCapture.delete(id)
+        }
+      })
+    return queued
   }
   destroy() {
     for (const { window } of [...this.tabs.values()]) window.destroy()
