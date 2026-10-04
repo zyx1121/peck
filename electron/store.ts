@@ -79,6 +79,30 @@ export class Store extends EventEmitter {
       .map((r) => ({ ...JSON.parse(String(r.payload)), id: Number(r.id) }))
       .reverse()
   }
+  // Oldest first after a cursor, so an agent can page forward.
+  eventsAfter(afterId: number, tabId?: string, limit = 500): BrowserEvent[] {
+    const rows = tabId
+      ? this.db
+          .prepare(
+            "SELECT id,payload FROM events WHERE id > ? AND tab=? ORDER BY id LIMIT ?"
+          )
+          .all(afterId, tabId, limit)
+      : this.db
+          .prepare(
+            "SELECT id,payload FROM events WHERE id > ? ORDER BY id LIMIT ?"
+          )
+          .all(afterId, limit)
+    return rows.map((r) => ({
+      ...JSON.parse(String(r.payload)),
+      id: Number(r.id),
+    }))
+  }
+  lastEventId() {
+    const row = this.db
+      .prepare("SELECT COALESCE(MAX(id), 0) AS id FROM events")
+      .get()
+    return Number(row?.id ?? 0)
+  }
   annotations(): Annotation[] {
     return this.db
       .prepare(

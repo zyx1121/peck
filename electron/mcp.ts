@@ -71,12 +71,13 @@ export async function startMcp(
     }
     tool(
       "peck_status",
-      "Read page windows, local MCP status, and pending feedback count. Each tabId identifies one page window.",
+      "Read page windows, local MCP status, pending feedback count, and lastEventId, a cursor for peck_events. Each tabId identifies one page window.",
       {},
       async () =>
         data({
           tabs: browser.list(),
           activeTabId: browser.activeId,
+          lastEventId: store.lastEventId(),
           pending: store.annotations().filter((x) => x.status !== "resolved")
             .length,
           mcp: status,
@@ -249,19 +250,25 @@ export async function startMcp(
     )
     tool(
       "peck_events",
-      "Read captured console, exception, request/response, or system records. Sensitive header keys are redacted; payload capture is bounded.",
+      "Read captured console, exception, request/response, or system records. Without afterId, returns the most recent records. With afterId (an event id, or lastEventId from peck_status taken before acting), returns only newer records, oldest first. Sensitive header keys are redacted; payload capture is bounded.",
       {
         tabId: z.string().optional(),
         kind: z.enum(["console", "network", "system"]).optional(),
+        afterId: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(300).default(80),
       },
-      async (args) =>
-        data(
-          store
-            .events(args.tabId, 500)
-            .filter((e) => !args.kind || e.kind === args.kind)
-            .slice(-args.limit)
+      async (args) => {
+        const match = (e: { kind: string }) =>
+          !args.kind || e.kind === args.kind
+        return data(
+          args.afterId === undefined
+            ? store.events(args.tabId, 500).filter(match).slice(-args.limit)
+            : store
+                .eventsAfter(args.afterId, args.tabId)
+                .filter(match)
+                .slice(0, args.limit)
         )
+      }
     )
     tool(
       "peck_annotations",

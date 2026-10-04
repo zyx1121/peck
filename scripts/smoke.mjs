@@ -401,6 +401,18 @@ try {
   assert.ok(
     timedOut.isError && JSON.stringify(timedOut.content).includes("Timed out")
   )
+  // Event cursor: only records after lastEventId come back.
+  const cursor = parse(await call("peck_status")).lastEventId
+  assert.ok(Number.isInteger(cursor) && cursor > 0)
+  await call("peck_click", { selector: "#save-button" })
+  await call("peck_wait", { until: "networkIdle", idleMs: 200 })
+  const fresh = parse(await call("peck_events", { afterId: cursor }))
+  assert.ok(fresh.length && fresh.every((e) => e.id > cursor))
+  assert.equal(
+    fresh.filter((e) => e.kind === "network" && e.details.status === 422)
+      .length,
+    1
+  )
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(
     new StdioClientTransport({
@@ -445,6 +457,7 @@ try {
           "one page per window",
           "trusted click, type, and key input",
           "waiting for navigation, text, selector, and network idle",
+          "event cursor",
           "bundled stdio bridge",
         ],
       },

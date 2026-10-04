@@ -20,7 +20,9 @@ conversation, repo, worktree, and development host. Peck does not run a model.
    check interactions with `peck_click`, `peck_type`, and `peck_press`, which
    send real browser input; `element.click()` in `peck_evaluate` misses focus
    and keyboard behavior. After an action or a source edit, use `peck_wait`
-   (navigation, selector, text, or network idle) instead of sleeping. DOM-only changes made by `peck_evaluate` are
+   (navigation, selector, text, or network idle) instead of sleeping. Take
+   `lastEventId` from `peck_status` before the check, then read
+   `peck_events` with `afterId` to show no new errors appeared. DOM-only changes made by `peck_evaluate` are
    temporary experiments, not completed source fixes.
 5. Reply with the actual change and checks, then resolve the item. If the
    project is ambiguous or a fix is blocked, reply and leave it unresolved.
