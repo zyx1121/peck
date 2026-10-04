@@ -92,6 +92,9 @@ in SQLite for the next session. Peck never runs an additional coding agent.
 | `peck_navigate` | Open an HTTP(S) URL in a specific page window |
 | `peck_snapshot` | Read page text and interactive elements |
 | `peck_evaluate` | Inspect or interact with a page using JavaScript |
+| `peck_click` | Click an element with real, trusted mouse events |
+| `peck_type` | Focus an element and type with real key events |
+| `peck_press` | Press a key or a combination such as `Escape` or `Meta+A` |
 | `peck_screenshot` | Capture a page image |
 | `peck_events` | Query captured console, network, and system records |
 | `peck_annotations` | List feedback and status |

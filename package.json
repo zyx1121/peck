@@ -1,7 +1,7 @@
 {
   "name": "peck",
   "private": true,
-  "version": "0.1.0-demo.6",
+  "version": "0.1.0-demo.7",
   "description": "Point it out. A Chromium browser for visual feedback and coding agents.",
   "author": "Loki",
   "license": "MIT",
