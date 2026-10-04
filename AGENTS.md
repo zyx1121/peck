@@ -5,6 +5,9 @@ Read README.md and PLAN.md before changes. The desktop app and local MCP use
 the same browser state. Do not add a model runtime or a second browser engine.
 
 - Use TypeScript, Electron WebContentsView, CDP, and the stock ui.zyx.tw theme.
+- The browser workspace fills the window. Do not wrap it in TaskShell, website
+  corners, a product heading, legal links, or a copyright footer. Keep app
+  actions in the browser toolbar.
 - Keep remote pages sandboxed and isolated from Node.js. Validate IPC senders.
 - Bind MCP to loopback, require its local token, and reject browser origins.
 - Keep request headers redacted and cap captured payloads and history.
