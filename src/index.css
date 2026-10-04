@@ -8,6 +8,18 @@ body {
 button {
   cursor: pointer;
 }
+.peck-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.peck-mark {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  background: currentColor;
+  mask: url("../assets/Peck.svg") center / contain no-repeat;
+}
 .workspace {
   flex: 1;
   min-height: 0;
