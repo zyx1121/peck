@@ -515,7 +515,11 @@ try {
   )
   const fixtureUrl = `http://127.0.0.1:${port}/`
   await waitFor(
-    () => fetch(fixtureUrl).then((r) => r.ok, () => false),
+    () =>
+      fetch(fixtureUrl).then(
+        (r) => r.ok,
+        () => false
+      ),
     "Vite fixture",
     30000
   )
@@ -539,7 +543,13 @@ try {
       ...fixtureItem.element.location,
       column: undefined,
     },
-    { file: "/src/App.jsx", line: 11, column: undefined, component: "Header", via: "react" }
+    {
+      file: "/src/App.jsx",
+      line: 11,
+      column: undefined,
+      component: "Header",
+      via: "react",
+    }
   )
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(

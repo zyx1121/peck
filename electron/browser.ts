@@ -440,7 +440,16 @@ export class Browser extends EventEmitter {
     }
   }
   async execute(expression: string, id = this.activeId) {
-    return this.awake(id, (send) => input.evaluate(send, expression))
+    return this.awake(id, async (send) => {
+      try {
+        return await input.evaluate(send, expression)
+      } catch (error) {
+        // A script that navigates the page loses its result, not its effect.
+        if (/navigated or closed|context was destroyed/i.test(String(error)))
+          return { navigated: true }
+        throw error
+      }
+    })
   }
   async click(
     target: { selector?: string; x?: number; y?: number },

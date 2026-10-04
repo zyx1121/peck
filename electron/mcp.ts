@@ -140,7 +140,7 @@ export async function startMcp(
     )
     tool(
       "peck_evaluate",
-      "Execute JavaScript in a Peck page window for inspection or interaction. DOM edits are temporary, not source-code fixes.",
+      "Execute JavaScript in a Peck page window for inspection or interaction. Returns { navigated: true } when the script navigates the page before its result returns. DOM edits are temporary, not source-code fixes.",
       { expression: z.string().max(30000), tabId: z.string().optional() },
       async (args) => data(await browser.execute(args.expression, args.tabId))
     )
