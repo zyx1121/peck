@@ -53,6 +53,19 @@ export interface Annotation {
   screenshot?: string
   context: BrowserEvent[]
 }
+// An agent conversation that used Peck's MCP through the bridge.
+export interface AgentSession {
+  agent: string
+  sessionId: string
+  cwd: string
+  pid?: number
+  client?: string
+  firstSeen?: number
+  lastSeen: number
+  lastWatch?: number
+  running?: boolean
+  watching?: boolean
+}
 export interface PeckState {
   page: TabInfo
   platform: string
@@ -60,6 +73,7 @@ export interface PeckState {
   picking: boolean
   selection: PickedElement | null
   annotations: Annotation[]
+  agents: AgentSession[]
   events: BrowserEvent[]
   mcp: { url: string; clients: number; waiters: number; lastActivity: number }
   version: string

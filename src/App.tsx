@@ -50,6 +50,10 @@ const where = (location: SourceLocation) =>
   ]
     .filter(Boolean)
     .join(" · ")
+const agentNames: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+}
 const statuses = {
   pending: "待處理",
   acknowledged: "處理中",
@@ -425,6 +429,35 @@ export default function App() {
                             : "等待 agent 連線"}
                       </span>
                     </div>
+                    {state.agents.map((a) => (
+                      <div className="agent-session" key={a.sessionId}>
+                        <div>
+                          <p>
+                            {agentNames[a.agent] ?? a.agent} ·{" "}
+                            {a.sessionId.slice(0, 8)}
+                          </p>
+                          <span>{a.cwd}</span>
+                          <span>
+                            {a.watching
+                              ? "等待留言中"
+                              : a.running
+                                ? "執行中"
+                                : "已結束"}{" "}
+                            · {time(a.lastSeen)}
+                          </span>
+                        </div>
+                        <IconButton
+                          label="移除"
+                          onClick={() =>
+                            void call("forget-agent", {
+                              sessionId: a.sessionId,
+                            })
+                          }
+                        >
+                          <X />
+                        </IconButton>
+                      </div>
+                    ))}
                     <a
                       href="https://github.com/zyx1121/peck"
                       className="inline-flex items-center gap-2 text-sm"

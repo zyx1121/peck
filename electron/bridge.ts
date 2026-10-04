@@ -20,6 +20,25 @@ async function main() {
             process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
             "Peck"
           ))
+  // The agent CLI that started this bridge, so Peck can find its
+  // conversation later. Codex sends its thread id in each call's _meta.
+  const agentHeader = () => {
+    const client = server.getClientVersion()?.name ?? ""
+    return encodeURIComponent(
+      JSON.stringify({
+        agent:
+          process.env.CLAUDECODE === "1"
+            ? "claude-code"
+            : /codex/i.test(client)
+              ? "codex"
+              : client || "unknown",
+        sessionId: process.env.CLAUDE_CODE_SESSION_ID,
+        cwd: process.cwd(),
+        pid: process.ppid,
+        client,
+      })
+    )
+  }
   let client: Client | undefined
   let previous = ""
   async function connect() {
@@ -36,7 +55,12 @@ async function main() {
       previous = ""
       await client.connect(
         new StreamableHTTPClientTransport(new URL(config.url), {
-          requestInit: { headers: { Authorization: `Bearer ${config.token}` } },
+          requestInit: {
+            headers: {
+              Authorization: `Bearer ${config.token}`,
+              "x-peck-agent": agentHeader(),
+            },
+          },
         })
       )
       previous = identity

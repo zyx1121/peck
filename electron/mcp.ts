@@ -13,7 +13,49 @@ import { Store } from "./store"
 import { demoPage } from "./demo"
 import { telemetry } from "./telemetry"
 import type { WaitCondition } from "./wait"
-import type { Annotation } from "../src/shared"
+import type { AgentSession, Annotation } from "../src/shared"
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js"
+import type {
+  ServerNotification,
+  ServerRequest,
+} from "@modelcontextprotocol/sdk/types.js"
+
+type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>
+
+// The agent conversation behind a call: the bridge sends who started it,
+// and Codex adds its thread id to each call's _meta. Values later go into a
+// resume command, so they are validated strictly.
+export function caller(extra: Extra): AgentSession | undefined {
+  const raw = extra.requestInfo?.headers?.["x-peck-agent"]
+  if (typeof raw !== "string") return
+  let info: Record<string, unknown>
+  try {
+    info = JSON.parse(decodeURIComponent(raw))
+  } catch {
+    return
+  }
+  // Codex 0.160 puts it in _meta["x-codex-turn-metadata"]; accept both.
+  const turn = extra._meta?.["x-codex-turn-metadata"] as
+    { threadId?: unknown } | undefined
+  const thread = extra._meta?.threadId ?? turn?.threadId
+  const sessionId = typeof thread === "string" ? thread : info.sessionId
+  const cwd = info.cwd
+  if (
+    typeof sessionId !== "string" ||
+    !/^[A-Za-z0-9_-]{8,128}$/.test(sessionId) ||
+    typeof cwd !== "string" ||
+    !cwd.startsWith("/")
+  )
+    return
+  return {
+    agent: String(info.agent ?? "unknown").slice(0, 40),
+    sessionId,
+    cwd: cwd.slice(0, 1000),
+    pid: Number.isInteger(info.pid) ? Number(info.pid) : undefined,
+    client: String(info.client ?? "").slice(0, 100),
+    lastSeen: Date.now(),
+  }
+}
 
 export async function startMcp(
   browser: Browser,
@@ -26,6 +68,8 @@ export async function startMcp(
   const token = randomBytes(32).toString("hex")
   const status = { url: "", clients: 0, waiters: 0, lastActivity: 0 }
   const servers = new Set<McpServer>()
+  // Sessions in a peck_watch_annotations long-poll right now.
+  const watching = new Map<string, number>()
   const data = (value: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
   })
@@ -55,7 +99,8 @@ export async function startMcp(
       schema: S,
       callback: (
         args: z.output<z.ZodObject<S>>,
-        signal: AbortSignal
+        signal: AbortSignal,
+        agent?: AgentSession
       ) => Promise<CallToolResult>
     ) {
       server.registerTool<z.ZodRawShape, z.ZodRawShape>(
@@ -64,13 +109,28 @@ export async function startMcp(
         async (args, extra) => {
           status.lastActivity = Date.now()
           status.clients = 1
+          const agent = caller(extra)
+          if (agent) store.seenAgent(agent)
           changed()
           const started = Date.now()
           try {
             const result = await callback(
               z.object(schema).parse(args),
-              extra.signal
+              extra.signal,
+              agent
             )
+            // An agent that stopped watching still learns about new comments.
+            const pending = store
+              .annotations()
+              .filter((a) => a.status === "pending").length
+            if (pending && !/^peck_(watch_)?annotation/.test(name))
+              result.content = [
+                ...result.content,
+                {
+                  type: "text" as const,
+                  text: `Peck: ${pending} pending comment${pending > 1 ? "s" : ""}. Read them with peck_watch_annotations.`,
+                },
+              ]
             telemetry(`mcp.${name}`, {
               success: true,
               duration_ms: Date.now() - started,
@@ -95,6 +155,7 @@ export async function startMcp(
           tabs: browser.list(),
           activeTabId: browser.activeId,
           lastEventId: store.lastEventId(),
+          agents: store.agents().slice(0, 10),
           pending: store.annotations().filter((x) => x.status !== "resolved")
             .length,
           mcp: status,
@@ -367,7 +428,14 @@ export async function startMcp(
         afterSequence: z.number().int().min(0).default(0),
         timeoutMs: z.number().int().min(100).max(50000).default(25000),
       },
-      async (args, signal) => {
+      async (args, signal, agent) => {
+        if (agent) {
+          store.seenAgent({ ...agent, lastWatch: Date.now() })
+          watching.set(
+            agent.sessionId,
+            (watching.get(agent.sessionId) ?? 0) + 1
+          )
+        }
         const pending = () =>
           store
             .annotations()
@@ -400,6 +468,11 @@ export async function startMcp(
             status.waiters--
             changed()
           }
+        }
+        if (agent) {
+          const count = (watching.get(agent.sessionId) ?? 1) - 1
+          if (count) watching.set(agent.sessionId, count)
+          else watching.delete(agent.sessionId)
         }
         return data({
           annotations: items.map(({ screenshot, context, ...a }) => ({
@@ -634,6 +707,7 @@ export async function onRequestError(...args: unknown[]) {
   status.url = `http://127.0.0.1:${address.port}/mcp`
   return {
     status,
+    watching,
     token,
     demoUrl: `http://127.0.0.1:${address.port}/demo`,
     close: () => {

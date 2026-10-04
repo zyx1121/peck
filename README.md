@@ -79,6 +79,11 @@ The optional [Peck skill](skills/peck/SKILL.md) describes the feedback loop.
 > Use Peck to watch my comments. Read each item's screenshot and debug context,
 > fix the current project's source, verify the result, and reply in the comment.
 
+Through the bridge, Peck remembers which Codex or Claude Code conversation
+uses it (Claude Code's session id, or Codex's thread id) with its working
+directory, and lists it under Local MCP. Every tool result also reports
+pending comments, so a conversation that stopped watching still notices them.
+
 `peck_watch_annotations` waits for feedback in the current conversation. A
 closed conversation is not automatically restarted. Unprocessed feedback stays
 in SQLite for the next session. Peck never runs an additional coding agent.
