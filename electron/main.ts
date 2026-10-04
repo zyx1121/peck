@@ -91,7 +91,13 @@ async function boot() {
     else browser.current(id).window.hide()
     push()
   }
-  const mcp = await startMcp(browser, store, visibility, push)
+  const mcp = await startMcp(
+    browser,
+    store,
+    visibility,
+    push,
+    (id) => !!sessions.get(id)?.picking
+  )
   const connectionFile = join(dataPath, "connection.json")
   writeFileSync(
     connectionFile,

@@ -16,8 +16,11 @@ conversation, repo, worktree, and development host. Peck does not run a model.
 3. Acknowledge the item with `peck_annotation_update`. Locate the actual source
    using the selector, text, screenshot, and available source metadata. Make
    changes in the current project using normal coding tools and project rules.
-4. Verify the resulting page, errors, and relevant requests. DOM-only changes
-   made by `peck_evaluate` are temporary experiments, not completed source fixes.
+4. Verify the resulting page, errors, and relevant requests. Reproduce and
+   check interactions with `peck_click`, `peck_type`, and `peck_press`, which
+   send real browser input; `element.click()` in `peck_evaluate` misses focus
+   and keyboard behavior. DOM-only changes made by `peck_evaluate` are
+   temporary experiments, not completed source fixes.
 5. Reply with the actual change and checks, then resolve the item. If the
    project is ambiguous or a fix is blocked, reply and leave it unresolved.
 

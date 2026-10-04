@@ -1,9 +1,10 @@
-import { WebContentsView, BrowserWindow } from "electron"
+import { WebContentsView, BrowserWindow, type WebContents } from "electron"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { EventEmitter } from "node:events"
 import type { TabInfo } from "../src/shared"
 import { Store, redact, safeUrl } from "./store"
+import * as input from "./input"
 
 export function webUrl(input: string) {
   const url = new URL(input.includes("://") ? input : `https://${input}`)
@@ -394,28 +395,43 @@ export class Browser extends EventEmitter {
     await this.current(id).view.webContents.loadURL(webUrl(url))
     return this.current(id).info
   }
-  async execute(expression: string, id = this.activeId) {
-    const c = this.current(id).view.webContents
+  // Run CDP work at full speed, even while the window is hidden.
+  private async awake<T>(id: string, run: (send: input.Send) => Promise<T>) {
+    const c: WebContents = this.current(id).view.webContents
     this.busy.set(id, (this.busy.get(id) ?? 0) + 1)
     c.setBackgroundThrottling(false)
     try {
-      const response = await c.debugger.sendCommand("Runtime.evaluate", {
-        expression,
-        returnByValue: true,
-        awaitPromise: true,
-        timeout: 10000,
-      })
-      if (response.exceptionDetails)
-        throw new Error(
-          response.exceptionDetails.exception?.description ??
-            response.exceptionDetails.text
-        )
-      return response.result.value ?? null
+      return await run((method, params) =>
+        c.debugger.sendCommand(method, params)
+      )
     } finally {
       const count = (this.busy.get(id) ?? 1) - 1
       this.busy.set(id, count)
       if (!count && !c.isDestroyed()) c.setBackgroundThrottling(true)
     }
+  }
+  async execute(expression: string, id = this.activeId) {
+    return this.awake(id, (send) => input.evaluate(send, expression))
+  }
+  async click(
+    target: { selector?: string; x?: number; y?: number },
+    options: Parameters<typeof input.click>[2],
+    id = this.activeId
+  ) {
+    return this.awake(id, (send) => input.click(send, target, options))
+  }
+  async type(
+    selector: string,
+    text: string,
+    clear: boolean,
+    id = this.activeId
+  ) {
+    return this.awake(id, (send) => input.type(send, selector, text, clear))
+  }
+  async press(keys: string, id = this.activeId) {
+    input.parseKeys(keys)
+    await this.awake(id, (send) => input.press(send, keys))
+    return { pressed: keys }
   }
   pick(enabled: boolean, id = this.activeId) {
     this.current(id).view.webContents.send("peck:pick", enabled)

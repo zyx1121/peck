@@ -112,7 +112,7 @@ try {
     })
   )
   const tools = await client.listTools()
-  assert.equal(tools.tools.length, 12)
+  assert.equal(tools.tools.length, 15)
   // A new window starts its history at the requested page.
   const firstPage = parse(await call("peck_status")).tabs[0]
   assert.ok(firstPage.url.endsWith("/demo"))
@@ -280,6 +280,59 @@ try {
   )
   const snapshot = await call("peck_snapshot")
   assert.ok(JSON.stringify(snapshot).includes("FIELDNOTES"))
+  // Trusted input: real events, typing and editing keys, hidden windows, and
+  // no agent input while the user is selecting an element.
+  await call("peck_evaluate", {
+    expression:
+      "window.__peckTrusted = []; document.addEventListener('click', (e) => window.__peckTrusted.push(e.isTrusted), true); true",
+  })
+  const countBefore = Number(await guest.locator("#count").textContent())
+  await call("peck_click", { selector: "#add-idea" })
+  assert.equal(
+    Number(await guest.locator("#count").textContent()),
+    countBefore + 1
+  )
+  assert.deepEqual(
+    parse(await call("peck_evaluate", { expression: "window.__peckTrusted" })),
+    [true]
+  )
+  await call("peck_type", {
+    selector: "#workspace-name",
+    text: "Peck 測試 Ab1",
+    clear: true,
+  })
+  assert.equal(
+    await guest.locator("#workspace-name").inputValue(),
+    "Peck 測試 Ab1"
+  )
+  await call("peck_press", { keys: "Backspace" })
+  assert.equal(
+    await guest.locator("#workspace-name").inputValue(),
+    "Peck 測試 Ab"
+  )
+  await call("peck_window", { visible: false })
+  await call("peck_click", { selector: "#add-idea" })
+  assert.equal(
+    Number(await guest.locator("#count").textContent()),
+    countBefore + 2
+  )
+  await call("peck_window", { visible: true })
+  const pickButton = shell.getByRole("button", {
+    name: "選取元件",
+    exact: true,
+  })
+  await pickButton.click()
+  await shell.locator('[aria-label="選取元件"][aria-pressed="true"]').waitFor()
+  const blocked = await client.callTool({
+    name: "peck_click",
+    arguments: { selector: "#add-idea" },
+  })
+  assert.ok(
+    blocked.isError &&
+      JSON.stringify(blocked.content).includes("selecting an element")
+  )
+  await pickButton.click()
+  await shell.locator('[aria-label="選取元件"][aria-pressed="false"]').waitFor()
   const reopenedWatch = call("peck_watch_annotations", {
     afterSequence: received.cursor,
     timeoutMs: 15000,
@@ -342,7 +395,7 @@ try {
       },
     })
   )
-  assert.equal((await bridge.listTools()).tools.length, 12)
+  assert.equal((await bridge.listTools()).tools.length, 15)
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
@@ -370,6 +423,7 @@ try {
           "compact layout",
           "single header row with the page title",
           "one page per window",
+          "trusted click, type, and key input",
           "bundled stdio bridge",
         ],
       },
