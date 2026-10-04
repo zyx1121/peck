@@ -2,7 +2,7 @@ import { _electron as electron } from "playwright"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { mkdir, readFile, writeFile, rm } from "node:fs/promises"
+import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import assert from "node:assert/strict"
 import { resolve } from "node:path"
 import { request } from "node:http"
@@ -48,6 +48,23 @@ async function call(name, args = {}) {
   assert.ok(!result.isError, JSON.stringify(result.content))
   return result
 }
+const freePort = () =>
+  new Promise((resolve) => {
+    const probe = createServer().listen(0, "127.0.0.1", () => {
+      const { port } = probe.address()
+      probe.close(() => resolve(port))
+    })
+  })
+const viteArgs = (config, port) => [
+  "node_modules/vite/bin/vite.js",
+  "--config",
+  config,
+  "--host",
+  "127.0.0.1",
+  "--port",
+  String(port),
+  "--strictPort",
+]
 const parse = (result) =>
   JSON.parse(result.content.find((c) => c.type === "text").text)
 // Each page window has a shell page and a separate page view. Find the first
@@ -114,7 +131,7 @@ try {
     })
   )
   const tools = await client.listTools()
-  assert.equal(tools.tools.length, 17)
+  assert.equal(tools.tools.length, 18)
   // A new window starts its history at the requested page.
   const firstPage = parse(await call("peck_status")).tabs[0]
   assert.ok(firstPage.url.endsWith("/demo"))
@@ -493,12 +510,7 @@ try {
   assert.ok(devServer.endpoint.endsWith("/_next/mcp"))
   // Source locations: a React dev app on Vite resolves the picked element
   // to its component and original file and line without project changes.
-  const port = await new Promise((resolve) => {
-    const probe = createServer().listen(0, "127.0.0.1", () => {
-      const { port } = probe.address()
-      probe.close(() => resolve(port))
-    })
-  })
+  const port = await freePort()
   vite = spawn(
     process.execPath,
     [
@@ -551,6 +563,111 @@ try {
       via: "react",
     }
   )
+  // Dev plugin: add it to a copy of the Vite fixture as an agent would,
+  // read tagged server events with the token, keep it out of the
+  // production build, then remove it.
+  const nextPlugin = parse(await call("peck_dev_plugin", { framework: "next" }))
+  assert.ok(
+    nextPlugin.instrumentation.includes("export async function register()") &&
+      nextPlugin.instrumentation.includes(
+        "export async function onRequestError("
+      ) &&
+      nextPlugin.instrumentation.includes("turbopackIgnore")
+  )
+  const plugin = parse(await call("peck_dev_plugin", { framework: "vite" }))
+  const token = plugin.file.content.match(/const TOKEN = "([0-9a-f]{64})"/)[1]
+  const project = resolve("output/plugin-fixture")
+  await rm(project, { recursive: true, force: true })
+  await cp("fixtures/vite-react", project, { recursive: true })
+  const configPath = `${project}/vite.config.mjs`
+  const originalConfig = await readFile(configPath, "utf8")
+  await writeFile(`${project}/${plugin.file.path}`, plugin.file.content)
+  await writeFile(
+    configPath,
+    `import peckDev from "./peck-dev.mjs"\n` +
+      originalConfig.replace(
+        "plugins: [react(), api()]",
+        "plugins: [react(), api(), peckDev()]"
+      )
+  )
+  const pluginPort = await freePort()
+  const pluginVite = spawn(process.execPath, viteArgs(configPath, pluginPort), {
+    stdio: "inherit",
+  })
+  try {
+    const origin = `http://127.0.0.1:${pluginPort}`
+    await waitFor(
+      () =>
+        fetch(origin).then(
+          (r) => r.ok,
+          () => false
+        ),
+      "plugin fixture",
+      30000
+    )
+    const failed = await fetch(`${origin}/api/fail`, {
+      method: "POST",
+      headers: { "x-peck-request-id": "smoke-1" },
+    })
+    assert.equal(failed.status, 500)
+    assert.equal((await fetch(`${origin}/__peck/events`)).status, 404)
+    await waitFor(async () => {
+      const body = await (
+        await fetch(`${origin}/__peck/events?after=0`, {
+          headers: { "x-peck-token": token },
+        })
+      ).json()
+      const tagged = body.events.filter((e) => e.requestId === "smoke-1")
+      return (
+        tagged.some((e) => e.kind === "request" && e.status === 500) &&
+        tagged.some(
+          (e) =>
+            e.kind === "console" && e.message.includes("workspace is locked")
+        )
+      )
+    }, "tagged dev server events")
+  } finally {
+    pluginVite.kill()
+  }
+  await new Promise((done, fail) =>
+    spawn(
+      process.execPath,
+      [
+        "node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        configPath,
+        "--logLevel",
+        "error",
+      ],
+      { stdio: "inherit" }
+    ).on("exit", (code) =>
+      code === 0 ? done() : fail(new Error(`vite build exited ${code}`))
+    )
+  )
+  for (const file of await readdir(`${project}/dist`, { recursive: true }))
+    if (/\.(js|html|css)$/.test(file))
+      assert.ok(
+        !(await readFile(`${project}/dist/${file}`, "utf8")).includes("__peck"),
+        `Peck code in the production build: ${file}`
+      )
+  await rm(`${project}/${plugin.file.path}`)
+  await rm(`${project}/dist`, { recursive: true })
+  await writeFile(configPath, originalConfig)
+  const files = (dir) =>
+    readdir(dir, { recursive: true, withFileTypes: true }).then((entries) =>
+      entries
+        .filter((e) => e.isFile())
+        .map((e) => `${e.parentPath.slice(dir.length)}/${e.name}`)
+        .sort()
+    )
+  const original = await files(resolve("fixtures/vite-react"))
+  assert.deepEqual(await files(project), original)
+  for (const file of original)
+    assert.equal(
+      await readFile(`${project}${file}`, "utf8"),
+      await readFile(resolve(`fixtures/vite-react${file}`), "utf8")
+    )
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(
     new StdioClientTransport({
@@ -565,7 +682,7 @@ try {
       },
     })
   )
-  assert.equal((await bridge.listTools()).tools.length, 17)
+  assert.equal((await bridge.listTools()).tools.length, 18)
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
@@ -600,6 +717,7 @@ try {
           "fresh screenshots of hidden windows",
           "after screenshots in agent replies",
           "source locations from attributes and React owner stacks",
+          "removable dev plugin with tagged server events",
           "bundled stdio bridge",
         ],
       },

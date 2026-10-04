@@ -8,6 +8,7 @@ await mkdir(stage, { recursive: true })
 await cp("dist", `${stage}/dist`, { recursive: true })
 await cp("dist-electron", `${stage}/dist-electron`, { recursive: true })
 await cp("skills", `${stage}/skills`, { recursive: true })
+await cp("plugin", `${stage}/plugin`, { recursive: true })
 const pkg = JSON.parse(readFileSync("package.json", "utf8"))
 await writeFile(
   `${stage}/package.json`,

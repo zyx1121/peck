@@ -1,4 +1,6 @@
 import { createServer } from "node:http"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { randomBytes, timingSafeEqual } from "node:crypto"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -18,7 +20,8 @@ export async function startMcp(
   store: Store,
   windowAction: (visible: boolean, tabId?: string) => Promise<void>,
   changed: () => void,
-  isPicking: (tabId: string) => boolean
+  isPicking: (tabId: string) => boolean,
+  devToken: string
 ) {
   const token = randomBytes(32).toString("hex")
   const status = { url: "", clients: 0, waiters: 0, lastActivity: 0 }
@@ -466,6 +469,70 @@ export async function startMcp(
         } finally {
           await devClient.close()
         }
+      }
+    )
+    tool(
+      "peck_dev_plugin",
+      "Get Peck's removable dev plugin for a Next.js or Vite project, with the exact steps to add it, or to remove it. It adds dev-mode server observability: server console output, uncaught errors, and failed requests, tagged per request, for Peck to show with the page's network records. It never runs in production. Apply the steps in the project with your own tools, restart the dev server, and remove it once the problem is solved. Keep it out of commits.",
+      {
+        framework: z.enum(["next", "vite"]),
+        action: z.enum(["add", "remove"]).default("add"),
+      },
+      async (args) => {
+        const remove =
+          args.framework === "vite"
+            ? [
+                "Delete peck-dev.mjs.",
+                'In vite.config, remove the line `import peckDev from "./peck-dev.mjs"` and `peckDev()` from plugins.',
+                "Remove the peck-dev.mjs line from .git/info/exclude.",
+                "Restart the dev server, then check that git status shows no Peck changes.",
+              ]
+            : [
+                "Delete peck-dev.mjs.",
+                "Remove the Peck lines from instrumentation.ts, or delete the file if Peck created it.",
+                "Remove the peck-dev.mjs line from .git/info/exclude.",
+                "Restart the dev server, then check that git status shows no Peck changes.",
+              ]
+        if (args.action === "remove") return data({ remove })
+        const content = readFileSync(
+          join(__dirname, "../plugin/peck-dev.mjs"),
+          "utf8"
+        ).replace("__PECK_TOKEN__", devToken)
+        // Next inlines NEXT_RUNTIME per runtime, so the condition must sit
+        // in each hook for the edge build to drop the Node-only code.
+        const instrumentation = `// Peck dev plugin: remove these lines with peck-dev.mjs when done.
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "development")
+    (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ \`file://\${process.cwd()}/peck-dev.mjs\`)).register()
+}
+
+export async function onRequestError(...args: unknown[]) {
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV === "development")
+    (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ \`file://\${process.cwd()}/peck-dev.mjs\`)).onRequestError(...args)
+}
+`
+        const steps =
+          args.framework === "vite"
+            ? [
+                "Save file.content as peck-dev.mjs next to vite.config.",
+                'In vite.config, add `import peckDev from "./peck-dev.mjs"` and put `peckDev()` in plugins.',
+                "Add peck-dev.mjs to .git/info/exclude, and do not commit the vite.config change.",
+                "Restart the dev server.",
+              ]
+            : [
+                "Save file.content as peck-dev.mjs in the project root, where next dev runs.",
+                "Create instrumentation.ts from instrumentation (src/instrumentation.ts when the app uses src/). If the file exists, merge register and onRequestError into it.",
+                "Add peck-dev.mjs to .git/info/exclude, and do not commit the instrumentation change.",
+                "Restart the dev server.",
+              ]
+        return data({
+          framework: args.framework,
+          file: { path: "peck-dev.mjs", content },
+          ...(args.framework === "next" ? { instrumentation } : {}),
+          steps,
+          remove,
+          note: "The file holds a token that lets Peck read the dev server's events. Treat it like a local secret.",
+        })
       }
     )
     tool(

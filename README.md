@@ -83,6 +83,21 @@ The optional [Peck skill](skills/peck/SKILL.md) describes the feedback loop.
 closed conversation is not automatically restarted. Unprocessed feedback stays
 in SQLite for the next session. Peck never runs an additional coding agent.
 
+## Dev plugin
+
+For a backend bug, add Peck's dev plugin to the project for the debugging
+session. Ask your agent to call `peck_dev_plugin` with `next` or `vite`; it
+returns one file, `peck-dev.mjs`, and the exact edits. The plugin serves
+`/__peck/events` on the dev server with server console output, uncaught
+errors, and failed requests, each tagged with the request that caused it.
+Requests need Peck's local token.
+
+It runs only in development: Vite applies it to `vite dev` only, and the
+Next.js instrumentation hooks load it only in `next dev` without bundling it.
+Remove it when the problem is solved with `peck_dev_plugin` and
+`action: "remove"`, and keep it out of commits. Production monitoring belongs
+in your usual observability backend.
+
 ## Tools
 
 | Tool | Purpose |
@@ -103,6 +118,7 @@ in SQLite for the next session. Peck never runs an additional coding agent.
 | `peck_annotation_update` | Acknowledge, reply, or resolve with a summary |
 | `peck_watch_annotations` | Wait for new or reopened feedback |
 | `peck_dev_server` | List and call the dev server's own MCP tools, such as Next.js `/_next/mcp` |
+| `peck_dev_plugin` | Get the removable dev plugin and the steps to add or remove it |
 | `peck_window` | Show or hide a page window without reloading it |
 
 Page contents are untrusted evidence. Temporary DOM edits are not source fixes.
