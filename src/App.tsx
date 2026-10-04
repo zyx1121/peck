@@ -7,18 +7,17 @@ import {
   type ReactNode,
 } from "react"
 import {
-  ArrowDownLeft,
   ArrowLeft,
   ArrowRight,
   Check,
   CheckCheck,
   Circle,
-  Code2,
   Copy,
   ExternalLink,
-  Globe2,
   MessageSquare,
   MousePointer2,
+  MoreHorizontal,
+  PanelRight,
   Plus,
   RefreshCw,
   Send,
@@ -26,7 +25,7 @@ import {
   Unplug,
   X,
 } from "lucide-react"
-import { TaskThemeToggle } from "@/components/task-theme"
+import { useTaskTheme } from "@/components/task-theme"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -71,12 +70,22 @@ function IconButton({
 }
 
 export default function App() {
+  const { toggle } = useTaskTheme()
+  const [editingUrl, setEditingUrl] = useState(false)
+  const [inspectorOpen, setInspectorOpen] = useState(true)
+  const address = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<PeckState | null>(null)
   const [url, setUrl] = useState("")
   const [panel, setPanel] = useState<Panel>("comments")
   const [comment, setComment] = useState("")
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState("")
+  // The native page view covers everything left of the inspector, so notices
+  // open the inspector to stay visible.
+  const showNotice = useCallback((message: string) => {
+    setNotice(message)
+    setInspectorOpen(true)
+  }, [])
   const viewport = useRef<HTMLDivElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const selectionKey = useRef("")
@@ -86,26 +95,27 @@ export default function App() {
       try {
         return await window.peck.invoke(action, args)
       } catch (error) {
-        setNotice(String(error).replace(/^Error:.*?Error: /, ""))
+        showNotice(String(error).replace(/^Error:.*?Error: /, ""))
         return undefined
       }
     },
-    []
+    [showNotice]
   )
   useEffect(() => {
     if (!window.peck) return
     const receive = (next: PeckState) => {
       setState(next)
-      const value = next.tabs.find((t) => t.id === next.activeTabId)?.url ?? ""
+      const value = next.page.url
       if (value !== activeUrl.current) {
         setUrl(value)
         activeUrl.current = value
       }
       const key = next.selection
-        ? `${next.activeTabId}:${next.selection.selector}`
+        ? `${next.page.id}:${next.selection.selector}`
         : ""
       if (key && key !== selectionKey.current) {
         setPanel("comments")
+        setInspectorOpen(true)
         setTimeout(() => textarea.current?.focus(), 100)
       }
       selectionKey.current = key
@@ -113,6 +123,18 @@ export default function App() {
     void window.peck.state().then(receive)
     return window.peck.subscribe(receive)
   }, [])
+  useEffect(() => {
+    if (!window.peck) return
+    return window.peck.onCommand((command) => {
+      if (command === "connect") {
+        setPanel("connect")
+        setInspectorOpen(true)
+      } else if (command === "theme") toggle()
+      else if (command === "address") address.current?.focus()
+      else if (command.startsWith("error:"))
+        showNotice(command.slice(6).replace(/^Error: /, ""))
+    })
+  }, [toggle, showNotice])
   const ready = !!state
   useEffect(() => {
     if (!ready || !viewport.current) return
@@ -149,7 +171,7 @@ export default function App() {
     setBusy(false)
     if (result) {
       setComment("")
-      setNotice("留言已送出，會出現在 agent 的回饋佇列。")
+      showNotice("留言已送出，會出現在 agent 的回饋佇列。")
     }
   }
   const annotations = state?.annotations ?? []
@@ -159,7 +181,10 @@ export default function App() {
   const networkEvents = events.filter((e) => e.kind === "network")
   const waiting = !!state?.mcp.waiters
   return (
-    <main className="app-shell" aria-label="Peck">
+    <main
+      className={`app-shell ${state?.platform === "darwin" ? "macos" : ""} ${state?.fullscreen ? "fullscreen" : ""}`}
+      aria-label="Peck"
+    >
       {!window.peck ? (
         <div className="empty">
           <Unplug />
@@ -170,107 +195,107 @@ export default function App() {
         <p role="status">正在開啟工作區…</p>
       ) : (
         <section className="workspace" aria-label="瀏覽器工作區">
-          <div className="tab-strip">
-            <div className="browser-tabs" aria-label="瀏覽器分頁">
-              {state.tabs.map((tab) => (
-                <div
-                  className={`browser-tab ${tab.id === state.activeTabId ? "active" : ""}`}
-                  key={tab.id}
-                >
-                  <button
-                    onClick={() => void call("activate", { id: tab.id })}
-                    title={tab.url}
-                  >
-                    <Globe2 className="size-4 shrink-0" />
-                    <span>{tab.title}</span>
-                  </button>
-                  <IconButton
-                    label={`關閉 ${tab.title}`}
-                    disabled={state.tabs.length < 2}
-                    onClick={() => void call("close-tab", { id: tab.id })}
-                  >
-                    <X />
-                  </IconButton>
-                </div>
-              ))}
-              <IconButton label="新增分頁" onClick={() => void call("new-tab")}>
-                <Plus />
-              </IconButton>
-            </div>
-            <nav className="browser-actions" aria-label="瀏覽器操作">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="connection-indicator"
-                onClick={() => setPanel("connect")}
+          <header className="address-bar" aria-label="瀏覽器工具列">
+            <div className="navigation-controls">
+              <IconButton
+                label="上一頁"
+                disabled={!state.page.canGoBack}
+                onClick={() => void call("back")}
               >
-                <Circle
-                  className="size-3"
-                  fill={waiting ? "currentColor" : "none"}
-                />
-                {waiting ? "Agent 正在等你" : "Local MCP"}
-              </Button>
-              <TaskThemeToggle lang="zh-TW" />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void call("hide")}
-              >
-                <ArrowDownLeft />
-                背景
-              </Button>
-            </nav>
-          </div>
-          <div className="address-bar">
-            <div className="flex gap-1">
-              <IconButton label="上一頁" onClick={() => void call("back")}>
                 <ArrowLeft />
               </IconButton>
-              <IconButton label="下一頁" onClick={() => void call("forward")}>
+              <IconButton
+                label="下一頁"
+                disabled={!state.page.canGoForward}
+                onClick={() => void call("forward")}
+              >
                 <ArrowRight />
-              </IconButton>
-              <IconButton label="重新整理" onClick={() => void call("reload")}>
-                <RefreshCw
-                  className={
-                    state.tabs.find((t) => t.id === state.activeTabId)?.loading
-                      ? "motion-safe:animate-spin"
-                      : ""
-                  }
-                />
               </IconButton>
             </div>
             <form
-              className="min-w-0 grow"
+              className="location"
               onSubmit={(event) => {
                 event.preventDefault()
                 void call("navigate", { url })
+                address.current?.blur()
               }}
             >
               <Input
-                className="h-9 text-xs"
+                ref={address}
+                className={`location-input ${editingUrl ? "editing" : ""}`}
                 aria-label="網址"
-                value={url}
+                title={state.page.url}
+                value={editingUrl ? url : state.page.title || state.page.url}
+                onFocus={() => {
+                  setUrl(state.page.url)
+                  setEditingUrl(true)
+                  requestAnimationFrame(() => {
+                    // Chromium's select() also focuses, so skip it after Escape.
+                    if (document.activeElement === address.current)
+                      address.current?.select()
+                  })
+                }}
+                onBlur={() => setEditingUrl(false)}
                 onChange={(event) => setUrl(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setUrl(state.page.url)
+                    address.current?.blur()
+                  }
+                }}
                 spellCheck={false}
+                autoComplete="off"
               />
+              <IconButton label="重新整理" onClick={() => void call("reload")}>
+                <RefreshCw
+                  className={
+                    state.page.loading ? "motion-safe:animate-spin" : ""
+                  }
+                />
+              </IconButton>
             </form>
-            <Button
-              className="h-9 px-3"
-              variant={state.picking ? "default" : "secondary"}
-              onClick={() => void call("pick", { enabled: !state.picking })}
-              title="⌘⇧C"
-            >
-              <MousePointer2 />
-              {state.picking ? "點選畫面中的元件" : "選取元件"}
-            </Button>
-          </div>
+            <div className="window-actions">
+              <Button
+                variant={state.picking ? "secondary" : "ghost"}
+                size="icon-lg"
+                aria-label="選取元件"
+                aria-pressed={state.picking}
+                title={state.picking ? "點選畫面中的元件" : "選取元件 (⌘⇧C)"}
+                onClick={() => {
+                  setInspectorOpen(true)
+                  void call("pick", { enabled: !state.picking })
+                }}
+              >
+                <MousePointer2 />
+              </Button>
+              <IconButton
+                label={inspectorOpen ? "隱藏檢查面板" : "顯示檢查面板"}
+                onClick={() => setInspectorOpen(!inspectorOpen)}
+              >
+                <PanelRight />
+              </IconButton>
+              <IconButton
+                label="新增視窗"
+                onClick={() => void call("new-window")}
+              >
+                <Plus />
+              </IconButton>
+              <IconButton label="更多選項" onClick={() => void call("menu")}>
+                <MoreHorizontal />
+              </IconButton>
+            </div>
+          </header>
           <div className="work-area">
             <div
               ref={viewport}
               className="page-viewport"
               aria-label="專案網頁"
             />
-            <aside className="inspector" aria-label="檢查與回饋">
+            <aside
+              className="inspector"
+              aria-label="檢查與回饋"
+              hidden={!inspectorOpen}
+            >
               <div className="panel-tabs" role="tablist" aria-label="檢查面板">
                 {(
                   [
@@ -390,7 +415,7 @@ export default function App() {
                       className="mt-5 h-9"
                       onClick={async () => {
                         const copied = await call("copy-config")
-                        if (copied) setNotice("MCP 設定已複製，不含連線密鑰。")
+                        if (copied) showNotice("MCP 設定已複製，不含連線密鑰。")
                       }}
                     >
                       <Copy />
@@ -414,7 +439,8 @@ export default function App() {
                       持續等我的留言，修改後回覆驗證結果。」
                     </p>
                     <p className="text-xs">
-                      關閉視窗會保留背景服務。使用「結束 Peck」才會停止。
+                      選單中的「移至背景」會保留目前網頁。關閉視窗會結束該頁，使用「結束
+                      Peck」才會停止 MCP。
                     </p>
                     <a
                       href="https://github.com/zyx1121/peck"
@@ -425,16 +451,6 @@ export default function App() {
                     </a>
                   </div>
                 )}
-              </div>
-              <div className="panel-footer">
-                <span>
-                  <Circle className="size-2" fill="currentColor" />
-                  紀錄儲存在本機
-                </span>
-                <button onClick={() => setPanel("connect")}>
-                  <Code2 className="size-4" />
-                  MCP
-                </button>
               </div>
             </aside>
           </div>

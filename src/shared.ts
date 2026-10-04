@@ -13,6 +13,8 @@ export interface TabInfo {
   title: string
   url: string
   loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
 }
 export interface BrowserEvent {
   id: number
@@ -36,8 +38,9 @@ export interface Annotation {
   context: BrowserEvent[]
 }
 export interface PeckState {
-  tabs: TabInfo[]
-  activeTabId: string
+  page: TabInfo
+  platform: string
+  fullscreen: boolean
   picking: boolean
   selection: PickedElement | null
   annotations: Annotation[]
@@ -50,6 +53,7 @@ export interface PeckState {
 export interface PeckApi {
   invoke: (action: string, args?: Record<string, unknown>) => Promise<unknown>
   state: () => Promise<PeckState>
+  onCommand: (callback: (command: string) => void) => () => void
   subscribe: (callback: (state: PeckState) => void) => () => void
 }
 declare global {

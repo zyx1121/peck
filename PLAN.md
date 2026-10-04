@@ -5,10 +5,15 @@ coding agent. Tagline: **Point it out.** By zyx.
 
 ## Accepted scope
 
-- Electron and TypeScript, with Chromium WebContentsView tabs.
-- The browser workspace fills the app window. Tabs and app actions occupy the
-  top toolbar; the page and inspector extend to the bottom edge. No outer
-  website template, product heading, corner links, or copyright footer.
+- Electron and TypeScript, with one Chromium WebContentsView per page window.
+  No tab strip: each page is its own window, and all windows share one local
+  MCP and profile.
+- The browser workspace fills the window. A single Safari-like toolbar row holds
+  the traffic lights, navigation, the page title (the address while editing),
+  element selection, the inspector toggle, a new window button, and a menu for
+  low-frequency actions. The page and inspector extend to the bottom edge. No
+  outer website template, product heading, corner links, status footer, or
+  copyright footer.
 - Visible and background modes preserve the same live page. No separate
   headless engine and no embedded model or agent orchestration runtime.
 - A local MCP server ships in the desktop app, with a bundled stdio bridge.

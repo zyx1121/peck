@@ -1,4 +1,4 @@
-import { WebContentsView, type BrowserWindow } from "electron"
+import { WebContentsView, BrowserWindow } from "electron"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { EventEmitter } from "node:events"
@@ -18,28 +18,68 @@ export function webUrl(input: string) {
   return url.toString()
 }
 export class Browser extends EventEmitter {
-  tabs = new Map<string, { info: TabInfo; view: WebContentsView }>()
+  tabs = new Map<
+    string,
+    {
+      info: TabInfo
+      view: WebContentsView
+      window: BrowserWindow
+    }
+  >()
   activeId = ""
-  bounds = { x: 20, y: 180, width: 800, height: 500 }
   private busy = new Map<string, number>()
-  constructor(
-    private window: BrowserWindow,
-    private store: Store
-  ) {
+  constructor(private store: Store) {
     super()
   }
   current(id = this.activeId) {
     const tab = this.tabs.get(id)
-    if (!tab) throw new Error("Tab not found")
+    if (!tab) throw new Error("Page window not found")
     return tab
   }
   list() {
-    return [...this.tabs.values()].map((t) => ({ ...t.info }))
+    return [...this.tabs.values()].map((t) => ({
+      ...t.info,
+      visible: t.window.isVisible(),
+    }))
   }
-  async create(url: string) {
-    if (this.tabs.size >= 8) throw new Error("The demo supports up to 8 tabs")
+  async create(url: string, visible = true) {
+    if (this.tabs.size >= 8)
+      throw new Error("The demo supports up to 8 windows")
     const target = webUrl(url)
     const id = randomUUID()
+    // Cascade from the active window, like a new Safari window.
+    const anchor = this.tabs.get(this.activeId)?.window
+    const frame =
+      anchor && !anchor.isDestroyed() && !anchor.isFullScreen()
+        ? anchor.getBounds()
+        : undefined
+    const window = new BrowserWindow({
+      title: "Peck",
+      ...(frame
+        ? {
+            x: frame.x + 24,
+            y: frame.y + 24,
+            width: frame.width,
+            height: frame.height,
+          }
+        : { width: 1440, height: 960 }),
+      minWidth: 900,
+      minHeight: 600,
+      show: false,
+      backgroundColor: "#000000",
+      ...(process.platform === "darwin"
+        ? {
+            titleBarStyle: "hiddenInset" as const,
+            trafficLightPosition: { x: 16, y: 20 },
+          }
+        : {}),
+      webPreferences: {
+        preload: join(__dirname, "shell-preload.cjs"),
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
     const view = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, "page-preload.cjs"),
@@ -50,16 +90,44 @@ export class Browser extends EventEmitter {
         backgroundThrottling: true,
       },
     })
-    const info: TabInfo = { id, title: "New tab", url: target, loading: true }
-    this.tabs.set(id, { info, view })
-    this.window.contentView.addChildView(view)
+    const info: TabInfo = {
+      id,
+      title: "",
+      url: target,
+      loading: true,
+      canGoBack: false,
+      canGoForward: false,
+    }
+    this.tabs.set(id, { info, view, window })
+    window.contentView.addChildView(view)
+    window.on("focus", () => {
+      this.activeId = id
+      this.emit("change")
+    })
+    window.on("closed", () => {
+      this.tabs.delete(id)
+      if (!view.webContents.isDestroyed()) view.webContents.close()
+      this.busy.delete(id)
+      if (this.activeId === id)
+        this.activeId = [...this.tabs.keys()].at(-1) ?? ""
+      this.emit("closed", id)
+      this.emit("change")
+    })
+    window.webContents.on("page-title-updated", (event) =>
+      event.preventDefault()
+    )
+    this.emit("created", id, window)
     const contents = view.webContents
+    // Page events can still arrive while its window is being closed.
+    const setTitle = (title: string) => {
+      if (!window.isDestroyed()) window.setTitle(title || "Peck")
+    }
     contents.session.setPermissionRequestHandler((_wc, _permission, callback) =>
       callback(false)
     )
     contents.setWindowOpenHandler(({ url }) => {
-      void this.create(url).catch((e) =>
-        this.store.event(id, "system", "error", String(e))
+      void this.create(url, !window.isDestroyed() && window.isVisible()).catch(
+        (e) => this.store.event(id, "system", "error", String(e))
       )
       return { action: "deny" }
     })
@@ -79,15 +147,23 @@ export class Browser extends EventEmitter {
     })
     contents.on("page-title-updated", (_, title) => {
       info.title = title
+      setTitle(title)
       this.emit("change")
     })
     contents.on("did-navigate", (_, url) => {
       info.url = safeUrl(url)
+      // A new document starts with the URL as its title until <title> loads.
+      info.title = contents.getTitle()
+      setTitle(info.title)
+      info.canGoBack = contents.navigationHistory.canGoBack()
+      info.canGoForward = contents.navigationHistory.canGoForward()
       this.emit("navigated", id)
       this.emit("change")
     })
     contents.on("did-navigate-in-page", (_, url) => {
       info.url = safeUrl(url)
+      info.canGoBack = contents.navigationHistory.canGoBack()
+      info.canGoForward = contents.navigationHistory.canGoForward()
       this.emit("navigated", id)
       this.emit("change")
     })
@@ -257,44 +333,54 @@ export class Browser extends EventEmitter {
           reason,
         })
     })
-    // Electron can defer CDP commands until the first document exists.
-    await contents.loadURL("about:blank")
-    await contents.debugger.sendCommand("Network.enable", {
-      maxTotalBufferSize: 8 * 1024 * 1024,
-      maxResourceBufferSize: 65536,
-    })
-    await contents.debugger.sendCommand("Runtime.enable")
-    this.activate(id)
-    void contents
-      .loadURL(target)
-      .catch((error) => this.store.event(id, "system", "error", String(error)))
-    return info
+    try {
+      await window.loadFile(join(__dirname, "../dist/index.html"))
+      // Electron can defer CDP commands until the first document exists.
+      await contents.loadURL("about:blank")
+      await contents.debugger.sendCommand("Network.enable", {
+        maxTotalBufferSize: 8 * 1024 * 1024,
+        maxResourceBufferSize: 65536,
+      })
+      await contents.debugger.sendCommand("Runtime.enable")
+      if (!this.activeId || visible) this.activeId = id
+      if (visible) window.show()
+      this.emit("change")
+      void contents
+        .loadURL(target)
+        .catch((error) =>
+          this.store.event(id, "system", "error", String(error))
+        )
+      return info
+    } catch (error) {
+      // The user may close a window before it finishes opening.
+      if (!window.isDestroyed()) window.destroy()
+      throw error
+    }
   }
   activate(id: string) {
-    this.current(id)
+    const { window } = this.current(id)
     this.activeId = id
-    for (const [key, tab] of this.tabs) tab.view.setVisible(key === id)
-    this.current().view.setBounds(this.bounds)
+    window.show()
+    window.focus()
     this.emit("change")
   }
-  layout(bounds: typeof this.bounds) {
-    const [width, height] = this.window.getContentSize()
-    this.bounds = {
-      x: Math.max(0, Math.round(bounds.x)),
-      y: Math.max(0, Math.round(bounds.y)),
-      width: Math.max(1, Math.min(width, Math.round(bounds.width))),
-      height: Math.max(1, Math.min(height, Math.round(bounds.height))),
-    }
-    if (this.activeId) this.current().view.setBounds(this.bounds)
+  layout(
+    bounds: { x: number; y: number; width: number; height: number },
+    id = this.activeId
+  ) {
+    const { window, view } = this.current(id)
+    const [width, height] = window.getContentSize()
+    const x = Math.max(0, Math.min(width - 1, Math.round(bounds.x)))
+    const y = Math.max(0, Math.min(height - 1, Math.round(bounds.y)))
+    view.setBounds({
+      x,
+      y,
+      width: Math.max(1, Math.min(width - x, Math.round(bounds.width))),
+      height: Math.max(1, Math.min(height - y, Math.round(bounds.height))),
+    })
   }
   async close(id: string) {
-    if (this.tabs.size === 1) throw new Error("Keep at least one tab open")
-    const tab = this.current(id)
-    this.tabs.delete(id)
-    this.window.contentView.removeChildView(tab.view)
-    tab.view.webContents.close()
-    if (id === this.activeId) this.activate(this.tabs.keys().next().value!)
-    this.emit("change")
+    this.current(id).window.close()
   }
   async navigate(url: string, id = this.activeId) {
     await this.current(id).view.webContents.loadURL(webUrl(url))
@@ -323,8 +409,8 @@ export class Browser extends EventEmitter {
       if (!count && !c.isDestroyed()) c.setBackgroundThrottling(true)
     }
   }
-  pick(enabled: boolean) {
-    this.current().view.webContents.send("peck:pick", enabled)
+  pick(enabled: boolean, id = this.activeId) {
+    this.current(id).view.webContents.send("peck:pick", enabled)
   }
   async screenshot(id = this.activeId) {
     const img = await this.current(id).view.webContents.capturePage()
@@ -334,10 +420,7 @@ export class Browser extends EventEmitter {
       .toString("base64")
   }
   destroy() {
-    for (const { view } of this.tabs.values()) {
-      this.window.contentView.removeChildView(view)
-      view.webContents.close()
-    }
+    for (const { window } of [...this.tabs.values()]) window.destroy()
     this.tabs.clear()
   }
 }
