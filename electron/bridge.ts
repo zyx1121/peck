@@ -51,7 +51,7 @@ async function main() {
     const identity = config.url + config.token
     if (!client || previous !== identity) {
       await client?.close()
-      client = new Client({ name: "peck-bridge", version: "0.1.0-demo.9" })
+      client = new Client({ name: "peck-bridge", version: "0.1.0-demo.10" })
       previous = ""
       await client.connect(
         new StreamableHTTPClientTransport(new URL(config.url), {
@@ -68,7 +68,7 @@ async function main() {
     return client
   }
   const server = new Server(
-    { name: "peck", version: "0.1.0-demo.9" },
+    { name: "peck", version: "0.1.0-demo.10" },
     { capabilities: { tools: {} } }
   )
   server.setRequestHandler(ListToolsRequestSchema, async () =>
