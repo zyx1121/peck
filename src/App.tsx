@@ -528,6 +528,7 @@ function CommentCard({
             {r.author === "agent" ? "Agent" : "你"} · {time(r.time)}
           </span>
           <p>{r.text}</p>
+          {r.hasImage && <ReplyImage id={item.id} index={i} call={call} />}
         </div>
       ))}
       {item.replies.length > 0 && (
@@ -569,6 +570,39 @@ function CommentCard({
         </button>
       )}
     </article>
+  )
+}
+function ReplyImage({
+  id,
+  index,
+  call,
+}: {
+  id: string
+  index: number
+  call: (action: string, args?: Record<string, unknown>) => Promise<unknown>
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [image, setImage] = useState("")
+  return (
+    <>
+      <button
+        className="context-button"
+        onClick={async () => {
+          setExpanded(!expanded)
+          if (!image) {
+            const result = await call("reply-image", { id, index })
+            if (typeof result === "string") setImage(result)
+          }
+        }}
+      >
+        {expanded ? "收起修改後畫面" : "查看修改後畫面"}
+      </button>
+      {expanded && image && (
+        <div className="context-image">
+          <img alt="修改後的元件截圖" src={`data:image/jpeg;base64,${image}`} />
+        </div>
+      )}
+    </>
   )
 }
 function EventList({

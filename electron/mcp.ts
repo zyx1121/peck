@@ -24,6 +24,18 @@ export async function startMcp(
   const data = (value: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
   })
+  // Images stay out of JSON; peck_annotation_get returns them as images.
+  const lean = ({ screenshot, context, ...a }: Annotation) => ({
+    ...a,
+    replies: a.replies.map(({ image, ...r }) => ({ ...r, hasImage: !!image })),
+    hasScreenshot: !!screenshot,
+    contextEvents: context.length,
+  })
+  const jpeg = (value: string) => ({
+    type: "image" as const,
+    mimeType: "image/jpeg",
+    data: value,
+  })
   function makeServer() {
     const server = new McpServer(
       { name: "peck", version: "0.1.0-demo.7" },
@@ -286,52 +298,61 @@ export async function startMcp(
                 a.sequence > args.afterSequence &&
                 (!args.status || a.status === args.status)
             )
-            .map(({ screenshot, context, ...a }) => ({
-              ...a,
-              hasScreenshot: !!screenshot,
-              contextEvents: context.length,
-            }))
+            .map(lean)
         )
     )
     tool(
       "peck_annotation_get",
-      "Read one comment with its captured element, screenshot, and debug context.",
+      "Read one comment with its captured element, screenshot, and debug context. Images follow the JSON: the screenshot taken with the comment, then each reply's after screenshot in reply order.",
       { id: z.string() },
       async (args) => {
-        const { screenshot, ...item } = store.get(args.id)
+        const item = store.get(args.id)
+        const replyImages = item.replies.flatMap((r) =>
+          r.image ? [jpeg(r.image)] : []
+        )
         return {
           content: [
-            ...data(item).content,
-            ...(screenshot
-              ? [
-                  {
-                    type: "image" as const,
-                    mimeType: "image/jpeg",
-                    data: screenshot,
-                  },
-                ]
-              : []),
+            ...data({ ...lean(item), context: item.context }).content,
+            ...(item.screenshot ? [jpeg(item.screenshot)] : []),
+            ...replyImages,
           ],
         }
       }
     )
     tool(
       "peck_annotation_update",
-      "Acknowledge, reply to, or resolve feedback. A resolution must describe the actual fix and verification.",
+      "Acknowledge, reply to, or resolve feedback. A resolution must describe the actual fix and verification. Set screenshot to attach the element's current look to the reply, so the user can approve it at a glance.",
       {
         id: z.string(),
         status: z.enum(["pending", "acknowledged", "resolved"]).optional(),
         reply: z.string().max(8000).optional(),
+        screenshot: z.boolean().default(false),
       },
       async (args) => {
         if (args.status === "resolved" && !args.reply?.trim())
           throw new Error("Resolution requires a verification summary")
-        const { screenshot, context, ...item } = store.update(
-          args.id,
-          args.status,
-          args.reply
+        if (args.screenshot && !args.reply?.trim())
+          throw new Error("A screenshot is attached to a reply; add reply text")
+        let reply = args.reply
+        let image: string | undefined
+        if (args.screenshot && reply) {
+          const target = store.get(args.id)
+          // Use the comment's window, or the active one if it was closed.
+          const windowId = browser.tabs.has(target.tabId)
+            ? target.tabId
+            : browser.activeId
+          image =
+            (await browser.elementScreenshot(
+              target.element.selector,
+              windowId
+            )) ?? undefined
+          if (!image)
+            reply +=
+              "\n\n(No after screenshot: the selector no longer matches an element.)"
+        }
+        return data(
+          lean(store.update(args.id, args.status, reply, "agent", image))
         )
-        return data(item)
       }
     )
     tool(
@@ -376,7 +397,13 @@ export async function startMcp(
           }
         }
         return data({
-          annotations: items.map(({ screenshot, context, ...a }) => a),
+          annotations: items.map(({ screenshot, context, ...a }) => ({
+            ...a,
+            replies: a.replies.map(({ image, ...r }) => ({
+              ...r,
+              hasImage: !!image,
+            })),
+          })),
           cursor: Math.max(args.afterSequence, ...items.map((a) => a.sequence)),
         })
       }

@@ -33,7 +33,14 @@ export interface Annotation {
   comment: string
   status: "pending" | "acknowledged" | "resolved"
   element: PickedElement
-  replies: { author: string; text: string; time: number }[]
+  // image is the after screenshot an agent attached; lists send hasImage.
+  replies: {
+    author: string
+    text: string
+    time: number
+    image?: string
+    hasImage?: boolean
+  }[]
   screenshot?: string
   context: BrowserEvent[]
 }

@@ -504,6 +504,31 @@ export class Browser extends EventEmitter {
       .toJPEG(75)
       .toString("base64")
   }
+  // Capture an element's current bounds with a small margin, after
+  // scrolling it into view. Returns null when the selector matches nothing.
+  async elementScreenshot(selector: string, id = this.activeId) {
+    const rect = (await this.execute(
+      `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (!el) return null
+        el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" })
+        const r = el.getBoundingClientRect()
+        const x = Math.max(0, Math.floor(r.left - 16))
+        const y = Math.max(0, Math.floor(r.top - 16))
+        const right = Math.min(innerWidth, Math.ceil(r.right + 16))
+        const bottom = Math.min(innerHeight, Math.ceil(r.bottom + 16))
+        if (right <= x || bottom <= y) return null
+        return { x, y, width: right - x, height: bottom - y }
+      })()`,
+      id
+    )) as Electron.Rectangle | null
+    if (!rect) return null
+    const img = await this.capture(id, rect)
+    return img
+      .resize({ width: Math.min(1280, img.getSize().width) })
+      .toJPEG(75)
+      .toString("base64")
+  }
   // A hidden window produces no new frames: a capture returns a stale frame
   // on macOS and never resolves on Linux. Show the window without the user
   // seeing it, wait for a fresh frame, capture, then hide it again.

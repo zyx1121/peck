@@ -225,6 +225,35 @@ try {
       "端到端測試：已驗證選取、截圖、422 紀錄與留言同步。這則測試沒有修改專案原始碼。",
   })
   await shell.getByText("已完成", { exact: true }).waitFor()
+  // After screenshot in a reply, and a note when the selector is gone.
+  await call("peck_annotation_update", {
+    id: item.id,
+    reply: "修改後的畫面。",
+    screenshot: true,
+  })
+  const withAfter = await call("peck_annotation_get", { id: item.id })
+  assert.equal(withAfter.content.filter((c) => c.type === "image").length, 2)
+  assert.ok(parse(withAfter).replies.at(-1).hasImage)
+  assert.ok(!JSON.stringify(parse(withAfter)).includes("/9j/"))
+  await shell.getByText("查看修改後畫面", { exact: true }).click()
+  await shell.getByRole("img", { name: "修改後的元件截圖" }).waitFor()
+  await call("peck_evaluate", {
+    expression:
+      "document.querySelector('#headline').id = 'headline-moved'; true",
+  })
+  await call("peck_annotation_update", {
+    id: item.id,
+    reply: "再看一次。",
+    screenshot: true,
+  })
+  const missing = parse(
+    await call("peck_annotation_get", { id: item.id })
+  ).replies.at(-1)
+  assert.ok(!missing.hasImage && missing.text.includes("selector"))
+  await call("peck_evaluate", {
+    expression:
+      "document.querySelector('#headline-moved').id = 'headline'; true",
+  })
   await shell.screenshot({ path: `${output}/shell.png` })
   const composed =
     process.platform !== "linux"
@@ -498,6 +527,7 @@ try {
           "waiting for navigation, text, selector, and network idle",
           "event cursor",
           "fresh screenshots of hidden windows",
+          "after screenshots in agent replies",
           "bundled stdio bridge",
         ],
       },

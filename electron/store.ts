@@ -155,7 +155,8 @@ export class Store extends EventEmitter {
     id: string,
     status?: Annotation["status"],
     reply?: string,
-    author = "agent"
+    author = "agent",
+    image?: string
   ) {
     const item = this.get(id)
     if (status) item.status = status
@@ -164,6 +165,7 @@ export class Store extends EventEmitter {
         author,
         text: reply.slice(0, 8000),
         time: Date.now(),
+        ...(image ? { image } : {}),
       })
       if (author === "user") item.status = "pending"
     }
