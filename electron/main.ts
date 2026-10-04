@@ -52,9 +52,15 @@ async function boot() {
       fullscreen: session.window.isFullScreen(),
       selection: session.selection,
       picking: session.picking,
-      annotations: store
-        .annotations()
-        .map((a) => ({ ...a, screenshot: undefined, context: [] })),
+      annotations: store.annotations().map((a) => ({
+        ...a,
+        screenshot: undefined,
+        context: [],
+        replies: a.replies.map(({ image, ...r }) => ({
+          ...r,
+          hasImage: !!image,
+        })),
+      })),
       events: store.events(session.id),
       mcp: {
         ...mcp.status,
@@ -322,6 +328,12 @@ async function boot() {
           )
         case "annotation-image":
           return store.get(z.string().parse(args.id)).screenshot ?? null
+        case "reply-image":
+          return (
+            store.get(z.string().parse(args.id)).replies[
+              z.number().int().min(0).parse(args.index)
+            ]?.image ?? null
+          )
         case "hide":
           await visibility(false, id)
           return

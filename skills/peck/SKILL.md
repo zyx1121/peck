@@ -24,7 +24,8 @@ conversation, repo, worktree, and development host. Peck does not run a model.
    `lastEventId` from `peck_status` before the check, then read
    `peck_events` with `afterId` to show no new errors appeared. DOM-only changes made by `peck_evaluate` are
    temporary experiments, not completed source fixes.
-5. Reply with the actual change and checks, then resolve the item. If the
+5. Reply with the actual change and checks, then resolve the item. Pass
+   `screenshot: true` so the reply shows the element after the fix. If the
    project is ambiguous or a fix is blocked, reply and leave it unresolved.
 
 When the user asks to watch comments, repeatedly call `peck_watch_annotations`
