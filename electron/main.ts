@@ -8,6 +8,18 @@ import { startMcp } from "./mcp"
 import { telemetry } from "./telemetry"
 import type { BrowserEvent, PeckState, PickedElement } from "../src/shared"
 
+// Each page window owns its selection and the context frozen at pick time.
+type Session = {
+  id: string
+  window: BrowserWindow
+  picking: boolean
+  selection: PickedElement | null
+  shot?: string
+  generation: number
+  context: BrowserEvent[]
+  capture: Promise<string | undefined>
+}
+
 app.setName("Peck")
 process.on("uncaughtException", (error) => {
   console.error(error)
@@ -29,48 +41,54 @@ async function boot() {
   const dataPath = app.getPath("userData")
   mkdirSync(dataPath, { recursive: true, mode: 0o700 })
   const store = new Store(join(dataPath, "peck.sqlite"))
-  const window = new BrowserWindow({
-    title: "Peck",
-    width: 1440,
-    height: 960,
-    minWidth: 1060,
-    minHeight: 720,
-    show: false,
-    backgroundColor: "#000000",
-    webPreferences: {
-      preload: join(__dirname, "shell-preload.cjs"),
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
-  const browser = new Browser(window, store)
+  const browser = new Browser(store)
+  const sessions = new Map<string, Session>()
   let quitting = false
-  let picking = false
-  let selection: PickedElement | null = null
-  let shot: string | undefined
-  let pickedTab = ""
-  let pickGeneration = 0
-  let capturedContext: BrowserEvent[] = []
-  let capture: Promise<string | undefined> = Promise.resolve(undefined)
   let pushTimer: ReturnType<typeof setTimeout> | undefined
+  function state(session: Session): PeckState {
+    return {
+      page: { ...browser.current(session.id).info },
+      platform: process.platform,
+      fullscreen: session.window.isFullScreen(),
+      selection: session.selection,
+      picking: session.picking,
+      annotations: store
+        .annotations()
+        .map((a) => ({ ...a, screenshot: undefined, context: [] })),
+      events: store.events(session.id),
+      mcp: {
+        ...mcp.status,
+        clients:
+          Date.now() - mcp.status.lastActivity < 90000 ? mcp.status.clients : 0,
+      },
+      visible: session.window.isVisible(),
+      version: app.getVersion(),
+      dataPath,
+    }
+  }
   function push() {
     if (quitting || pushTimer) return
     pushTimer = setTimeout(() => {
       pushTimer = undefined
-      if (
-        !quitting &&
-        !window.isDestroyed() &&
-        !window.webContents.isLoadingMainFrame()
-      )
-        window.webContents.send("peck:state", state())
+      for (const session of sessions.values()) {
+        const { window } = session
+        if (
+          !quitting &&
+          !window.isDestroyed() &&
+          !window.webContents.isLoadingMainFrame()
+        )
+          window.webContents.send("peck:state", state(session))
+      }
     }, 80)
   }
-  function visibility(visible: boolean) {
-    if (visible) {
-      window.show()
-      window.focus()
-    } else window.hide()
+  // Show or hide one page window. Showing with no windows left opens one.
+  async function visibility(visible: boolean, id = browser.activeId) {
+    if (!id) {
+      if (visible) await browser.create(mcp.demoUrl)
+      return
+    }
+    if (visible) browser.activate(id)
+    else browser.current(id).window.hide()
     push()
   }
   const mcp = await startMcp(browser, store, visibility, push)
@@ -80,46 +98,69 @@ async function boot() {
     JSON.stringify({ url: mcp.status.url, token: mcp.token, pid: process.pid }),
     { mode: 0o600 }
   )
-  function state(): PeckState {
-    return {
-      tabs: browser.list(),
-      activeTabId: browser.activeId,
-      selection,
-      picking,
-      annotations: store
-        .annotations()
-        .map((a) => ({ ...a, screenshot: undefined, context: [] })),
-      events: store.events(browser.activeId),
-      mcp: {
-        ...mcp.status,
-        clients:
-          Date.now() - mcp.status.lastActivity < 90000 ? mcp.status.clients : 0,
-      },
-      visible: window.isVisible(),
-      version: app.getVersion(),
-      dataPath,
-    }
+  function command(session: Session, name: string) {
+    session.window.webContents.focus()
+    session.window.webContents.send("peck:command", name)
   }
-  store.on("change", push)
-  browser.on("change", push)
-  browser.on("navigated", (id: string) => {
-    if (id === browser.activeId) {
-      selection = null
-      shot = undefined
-      picking = false
-      pickGeneration++
-    }
-  })
-  window.on("close", (event) => {
-    if (!quitting) {
+  function clearSelection(session: Session) {
+    session.selection = null
+    session.shot = undefined
+    session.picking = false
+    session.generation++
+  }
+  function togglePicker(session: Session) {
+    session.picking = !session.picking
+    browser.pick(session.picking, session.id)
+    push()
+  }
+  function openWindow() {
+    void browser.create(mcp.demoUrl).catch((error) => {
+      const session = sessions.get(browser.activeId)
+      if (session) command(session, `error:${String(error)}`)
+    })
+  }
+  const focused = () => sessions.get(browser.activeId)
+  const openExternal = (url: string) => {
+    if (
+      url.startsWith("https://www.zyx.tw") ||
+      url.startsWith("https://github.com/zyx1121/peck")
+    )
+      void shell.openExternal(url)
+  }
+  browser.on("created", (id: string, window: BrowserWindow) => {
+    sessions.set(id, {
+      id,
+      window,
+      picking: false,
+      selection: null,
+      generation: 0,
+      context: [],
+      capture: Promise.resolve(undefined),
+    })
+    window.on("show", push)
+    window.on("hide", push)
+    window.on("enter-full-screen", push)
+    window.on("leave-full-screen", push)
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      openExternal(url)
+      return { action: "deny" }
+    })
+    window.webContents.on("will-navigate", (event, url) => {
       event.preventDefault()
-      visibility(false)
-    }
+      openExternal(url)
+    })
   })
-  window.on("show", push)
-  window.on("hide", push)
-  app.on("activate", () => visibility(true))
-  app.on("second-instance", () => visibility(true))
+  browser.on("closed", (id: string) => sessions.delete(id))
+  browser.on("change", push)
+  store.on("change", push)
+  browser.on("navigated", (id: string) => {
+    const session = sessions.get(id)
+    if (session) clearSelection(session)
+  })
+  app.on("activate", () => void visibility(true))
+  app.on("second-instance", () => void visibility(true))
+  // Closing the last page window keeps the local MCP running.
+  app.on("window-all-closed", () => {})
   app.on("before-quit", () => {
     if (quitting) return
     quitting = true
@@ -135,32 +176,22 @@ async function boot() {
   })
   process.on("SIGTERM", () => app.quit())
   process.on("SIGINT", () => app.quit())
-  const openExternal = (url: string) => {
-    if (
-      url.startsWith("https://www.zyx.tw") ||
-      url.startsWith("https://github.com/zyx1121/peck")
-    )
-      void shell.openExternal(url)
-  }
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    openExternal(url)
-    return { action: "deny" }
-  })
-  window.webContents.on("will-navigate", (event, url) => {
-    event.preventDefault()
-    openExternal(url)
-  })
   function assertShell(event: Electron.IpcMainInvokeEvent) {
-    if (
-      event.sender !== window.webContents ||
-      event.senderFrame !== window.webContents.mainFrame
+    const session = [...sessions.values()].find(
+      (s) => s.window.webContents === event.sender
     )
+    if (!session || event.senderFrame !== event.sender.mainFrame)
       throw new Error("Untrusted IPC sender")
+    return session
   }
-  ipcMain.handle("peck:state", (event) => {
-    assertShell(event)
-    return state()
-  })
+  function pageSession(event: Electron.IpcMainEvent) {
+    const tab = [...browser.tabs.values()].find(
+      (t) => t.view.webContents === event.sender
+    )
+    if (!tab || event.senderFrame !== event.sender.mainFrame) return
+    return sessions.get(tab.info.id)
+  }
+  ipcMain.handle("peck:state", (event) => state(assertShell(event)))
   const pickedSchema = z.object({
     selector: z.string().max(2000),
     tag: z.string().max(100),
@@ -180,68 +211,59 @@ async function boot() {
     styles: z.record(z.string().max(500)),
     source: z.string().max(2000).optional(),
   })
-  ipcMain.on("peck:picked", async (event, value) => {
-    const tab = [...browser.tabs.values()].find(
-      (t) => t.view.webContents === event.sender
-    )
-    if (
-      !tab ||
-      tab.info.id !== browser.activeId ||
-      event.senderFrame !== event.sender.mainFrame
-    )
-      return
+  ipcMain.on("peck:picked", (event, value) => {
+    const session = pageSession(event)
     const parsed = pickedSchema.safeParse(value)
-    if (!parsed.success) return
-    const generation = ++pickGeneration
-    selection = { ...parsed.data, url: safeUrl(parsed.data.url) }
-    pickedTab = tab.info.id
-    picking = false
-    shot = undefined
-    push()
-    capturedContext = store.events(pickedTab, 30)
-    capture = browser
-      .screenshot(pickedTab)
+    if (!session || !parsed.success) return
+    const generation = ++session.generation
+    session.selection = { ...parsed.data, url: safeUrl(parsed.data.url) }
+    session.picking = false
+    session.shot = undefined
+    session.context = store.events(session.id, 30)
+    session.capture = browser
+      .screenshot(session.id)
       .then((image) => {
-        if (generation === pickGeneration) shot = image
+        if (generation === session.generation) session.shot = image
         return image
       })
       .catch(() => undefined)
+    push()
   })
   ipcMain.on("peck:pick-cancel", (event) => {
-    if (browser.current().view.webContents !== event.sender) return
-    picking = false
+    const session = pageSession(event)
+    if (!session) return
+    session.picking = false
     push()
   })
   ipcMain.handle(
     "peck:action",
     async (event, action: string, args: Record<string, unknown> = {}) => {
-      assertShell(event)
+      const session = assertShell(event)
+      const { id, window } = session
+      const contents = browser.current(id).view.webContents
       switch (action) {
-        case "navigate":
-          selection = null
-          shot = undefined
-          picking = false
-          browser.pick(false)
-          return browser.navigate(z.string().max(4000).parse(args.url))
-        case "new-tab":
+        case "navigate": {
+          clearSelection(session)
+          browser.pick(false, id)
+          const loading = browser.navigate(
+            z.string().max(4000).parse(args.url),
+            id
+          )
+          contents.focus()
+          return loading
+        }
+        case "new-window":
           return browser.create(mcp.demoUrl)
-        case "activate":
-          browser.pick(false)
-          picking = false
-          selection = null
-          pickGeneration++
-          browser.activate(z.string().parse(args.id))
-          return
-        case "close-tab":
-          return browser.close(z.string().parse(args.id))
         case "back":
-          browser.current().view.webContents.navigationHistory.goBack()
+          if (contents.navigationHistory.canGoBack())
+            contents.navigationHistory.goBack()
           return
         case "forward":
-          browser.current().view.webContents.navigationHistory.goForward()
+          if (contents.navigationHistory.canGoForward())
+            contents.navigationHistory.goForward()
           return
         case "reload":
-          browser.current().view.webContents.reload()
+          contents.reload()
           return
         case "layout":
           browser.layout(
@@ -252,30 +274,28 @@ async function boot() {
                 width: z.number().positive(),
                 height: z.number().positive(),
               })
-              .parse(args)
+              .parse(args),
+            id
           )
           return
         case "pick":
-          picking = z.boolean().parse(args.enabled)
-          browser.pick(picking)
+          session.picking = z.boolean().parse(args.enabled)
+          browser.pick(session.picking, id)
           push()
           return
         case "clear-selection":
-          selection = null
-          shot = undefined
-          pickGeneration++
+          clearSelection(session)
           push()
           return
         case "comment": {
-          if (!selection) throw new Error("Select an element first")
+          if (!session.selection) throw new Error("Select an element first")
           const comment = z.string().trim().min(1).max(4000).parse(args.comment)
-          const selected = selection
-          const tabId = pickedTab
-          const context = capturedContext
-          const image = shot ?? (await capture)
-          const item = store.add(tabId, comment, selected, image, context)
-          selection = null
-          shot = undefined
+          const selected = session.selection
+          const context = session.context
+          const generation = session.generation
+          const image = session.shot ?? (await session.capture)
+          const item = store.add(id, comment, selected, image, context)
+          if (session.generation === generation) clearSelection(session)
           telemetry("annotation.created", { annotation_id: item.id })
           push()
           return item.id
@@ -297,7 +317,29 @@ async function boot() {
         case "annotation-image":
           return store.get(z.string().parse(args.id)).screenshot ?? null
         case "hide":
-          visibility(false)
+          await visibility(false, id)
+          return
+        case "menu":
+          Menu.buildFromTemplate([
+            {
+              label: "新增視窗",
+              accelerator: "CmdOrCtrl+N",
+              click: openWindow,
+            },
+            { label: "Local MCP…", click: () => command(session, "connect") },
+            { label: "切換深淺色", click: () => command(session, "theme") },
+            { type: "separator" },
+            {
+              label: "移至背景",
+              accelerator: "CmdOrCtrl+H",
+              click: () => void visibility(false, id),
+            },
+            {
+              label: "關閉視窗",
+              accelerator: "CmdOrCtrl+W",
+              click: () => window.close(),
+            },
+          ]).popup({ window })
           return
         case "copy-config": {
           const config = {
@@ -313,59 +355,103 @@ async function boot() {
           return config
         }
         case "metrics":
-          return app
-            .getAppMetrics()
-            .map((p) => ({
-              type: p.type,
-              cpu: p.cpu.percentCPUUsage,
-              memory: p.memory,
-            }))
+          return app.getAppMetrics().map((p) => ({
+            type: p.type,
+            cpu: p.cpu.percentCPUUsage,
+            memory: p.memory,
+          }))
         default:
           throw new Error("Unknown action")
       }
     }
   )
+  const withFocused = (run: (session: Session) => void) => () => {
+    const session = focused()
+    if (session) run(session)
+  }
+  const history = (step: "goBack" | "goForward") =>
+    withFocused((session) => {
+      const { navigationHistory } = browser.current(session.id).view.webContents
+      if (
+        step === "goBack"
+          ? navigationHistory.canGoBack()
+          : navigationHistory.canGoForward()
+      )
+        navigationHistory[step]()
+    })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
         label: "Peck",
         submenu: [
-          { label: "顯示 Peck", click: () => visibility(true) },
+          {
+            label: "Local MCP…",
+            click: withFocused((s) => command(s, "connect")),
+          },
+          { type: "separator" },
+          { label: "顯示視窗", click: () => void visibility(true) },
           {
             label: "移至背景",
             accelerator: "CmdOrCtrl+H",
-            click: () => visibility(false),
+            click: () => void visibility(false),
           },
           { type: "separator" },
           { role: "quit", label: "結束 Peck" },
         ],
       },
-      { role: "editMenu" },
+      {
+        label: "檔案",
+        submenu: [
+          {
+            label: "新增視窗",
+            accelerator: "CmdOrCtrl+N",
+            click: openWindow,
+          },
+          {
+            label: "關閉視窗",
+            accelerator: "CmdOrCtrl+W",
+            click: withFocused((s) => s.window.close()),
+          },
+        ],
+      },
+      { role: "editMenu", label: "編輯" },
       {
         label: "瀏覽",
         submenu: [
           {
+            label: "輸入網址",
+            accelerator: "CmdOrCtrl+L",
+            click: withFocused((s) => command(s, "address")),
+          },
+          {
             label: "選取元件",
             accelerator: "CmdOrCtrl+Shift+C",
-            click: () => {
-              picking = !picking
-              browser.pick(picking)
-              push()
-            },
+            click: withFocused(togglePicker),
+          },
+          { type: "separator" },
+          {
+            label: "上一頁",
+            accelerator: "CmdOrCtrl+[",
+            click: history("goBack"),
+          },
+          {
+            label: "下一頁",
+            accelerator: "CmdOrCtrl+]",
+            click: history("goForward"),
           },
           {
             label: "重新整理",
             accelerator: "CmdOrCtrl+R",
-            click: () => browser.current().view.webContents.reload(),
+            click: withFocused((s) =>
+              browser.current(s.id).view.webContents.reload()
+            ),
           },
         ],
       },
+      { role: "windowMenu", label: "視窗" },
     ])
   )
-  await window.loadFile(join(__dirname, "../dist/index.html"))
   await browser.create(mcp.demoUrl)
-  window.show()
-  push()
   telemetry("app.started", {
     version: app.getVersion(),
     platform: process.platform,

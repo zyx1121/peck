@@ -48,9 +48,22 @@ async function call(name, args = {}) {
 }
 const parse = (result) =>
   JSON.parse(result.content.find((c) => c.type === "text").text)
+// Each page window has a shell page and a separate page view. Find the first
+// shell by its bundled document instead of relying on target order.
+const shellOf = (electronApp) =>
+  waitFor(
+    () =>
+      Promise.resolve(
+        electronApp.windows().find((p) => p.url().endsWith("/dist/index.html"))
+      ),
+    "browser shell",
+    30000
+  )
+const windowCount = () =>
+  app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
 try {
   console.log("Electron launched; waiting for shell")
-  const shell = await app.firstWindow()
+  const shell = await shellOf(app)
   await shell.waitForSelector(".workspace", { timeout: 30000 })
   console.log("Shell loaded; waiting for guest")
   const guest = await waitFor(
@@ -59,6 +72,36 @@ try {
   )
   await guest.locator("#headline").waitFor()
   const coldStartMs = Date.now() - started
+  // One compact header: no tab strip or footer, and the page title in place
+  // of the address until the field is focused.
+  assert.equal(
+    await shell.locator(".tab-strip, .browser-tab, .panel-footer").count(),
+    0
+  )
+  assert.equal((await shell.locator(".address-bar").boundingBox()).y, 0)
+  assert.equal((await shell.locator(".page-viewport").boundingBox()).y, 56)
+  const address = shell.getByRole("textbox", { name: "網址" })
+  await waitFor(
+    async () => (await address.inputValue()) === "Peck Playground",
+    "page title in the address field"
+  )
+  assert.equal(
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getTitle()
+    ),
+    "Peck Playground"
+  )
+  await address.focus()
+  assert.ok((await address.inputValue()).endsWith("/demo"))
+  await address.press("Escape")
+  assert.equal(await address.inputValue(), "Peck Playground")
+  await shell.getByRole("button", { name: "隱藏檢查面板" }).click()
+  await waitFor(
+    async () => !(await shell.locator(".inspector").isVisible()),
+    "hidden inspector"
+  )
+  await shell.getByRole("button", { name: "顯示檢查面板" }).click()
+  await shell.locator(".inspector").waitFor()
   const config = JSON.parse(
     await readFile(`${dataPath}/connection.json`, "utf8")
   )
@@ -245,7 +288,10 @@ try {
   const reopened = parse(await reopenedWatch)
   assert.equal(reopened.annotations[0]?.id, item.id)
   assert.ok(reopened.cursor > received.cursor)
-  assert.equal(parse(await call("peck_annotation_get", { id: item.id })).status, "pending")
+  assert.equal(
+    parse(await call("peck_annotation_get", { id: item.id })).status,
+    "pending"
+  )
   const beforeTabs = parse(await call("peck_tabs")).length
   await call("peck_tabs", {
     action: "open",
@@ -253,13 +299,42 @@ try {
   })
   const afterTabs = parse(await call("peck_tabs"))
   assert.equal(afterTabs.length, beforeTabs + 1)
+  assert.equal(await windowCount(), beforeTabs + 1)
   await call("peck_tabs", { action: "close", tabId: afterTabs.at(-1).id })
+  await waitFor(
+    async () => (await windowCount()) === beforeTabs,
+    "closed page window"
+  )
+  await shell.getByRole("button", { name: "新增視窗", exact: true }).click()
+  const second = await waitFor(
+    () =>
+      Promise.resolve(
+        app
+          .windows()
+          .find((p) => p !== shell && p.url().endsWith("/dist/index.html"))
+      ),
+    "new page window shell"
+  )
+  await second.waitForSelector(".workspace", { timeout: 30000 })
+  assert.equal(await windowCount(), beforeTabs + 1)
+  const opened = parse(await call("peck_tabs")).at(-1)
+  await call("peck_tabs", { action: "close", tabId: opened.id })
+  await waitFor(
+    async () => (await windowCount()) === beforeTabs,
+    "closed new page window"
+  )
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(
     new StdioClientTransport({
       command: executablePath ?? process.execPath,
-      args: [resolve(process.env.PECK_BRIDGE_PATH ?? "dist-electron/bridge.cjs")],
-      env: { ...process.env, PECK_DATA_DIR: dataPath, ELECTRON_RUN_AS_NODE: "1" },
+      args: [
+        resolve(process.env.PECK_BRIDGE_PATH ?? "dist-electron/bridge.cjs"),
+      ],
+      env: {
+        ...process.env,
+        PECK_DATA_DIR: dataPath,
+        ELECTRON_RUN_AS_NODE: "1",
+      },
     })
   )
   assert.equal((await bridge.listTools()).tools.length, 12)
@@ -288,7 +363,8 @@ try {
           "reply/status UI synchronization",
           "background state preservation",
           "compact layout",
-          "multiple tabs",
+          "single header row with the page title",
+          "one page per window",
           "bundled stdio bridge",
         ],
       },
@@ -311,7 +387,7 @@ try {
 }
 const restarted = await electron.launch(launchOptions)
 try {
-  const shell = await restarted.firstWindow()
+  const shell = await shellOf(restarted)
   await shell.getByText("把標題改成中文，字小一點。", { exact: true }).waitFor()
   console.log("PASS: SQLite annotation persistence after restart")
 } finally {

@@ -13,13 +13,20 @@ Peck keeps its own browser profile. Hide the window while your agent works,
 then show the same live page when you want to review it. Your everyday browser
 stays separate. No model account or API key is required by Peck itself.
 
+Each page opens in its own window with one compact toolbar row: navigation,
+the page title (click it to edit the address), element selection, the
+inspector toggle, a new window button, and a menu for Local MCP, theme, and
+background mode. Closing a window closes its page. **移至背景** (Cmd+H) hides the
+window and keeps the page alive. The local MCP runs until you quit Peck.
+
 ## Try the demo
 
 Download the Apple Silicon app from [Releases](https://github.com/zyx1121/peck/releases).
 Open Peck, then use the built-in Fieldnotes playground or enter your own dev URL.
 The demo is unsigned and not notarized.
 
-1. Click **選取元件** or press **Cmd+Shift+C**, then click a page element.
+1. Click the pointer button (**選取元件**) or press **Cmd+Shift+C**, then click a
+   page element.
 2. Write a comment in the right panel and send it.
 3. Connect your agent through local MCP. Ask it to watch and process Peck feedback.
 4. Read its reply in the original comment. Reply again to queue another pass.
@@ -34,7 +41,8 @@ Peck includes an authenticated loopback HTTP MCP server and a stdio bridge.
 The bridge discovers the running app's port and token from its local connection
 file. You do not need a separate Node.js installation or a second browser.
 
-Open **Local MCP** in the app and copy the client configuration. For an app at
+Choose **Local MCP…** from the toolbar menu or the Peck menu, then copy the
+client configuration. For an app at
 `/Applications/Peck.app`, the generic MCP configuration is:
 
 ```json
@@ -79,9 +87,9 @@ in SQLite for the next session. Peck never runs an additional coding agent.
 
 | Tool | Purpose |
 | --- | --- |
-| `peck_status` | Inspect tabs, connection activity, and pending comments |
-| `peck_tabs` | List, open, activate, and close project tabs |
-| `peck_navigate` | Open an HTTP(S) URL in a specific tab |
+| `peck_status` | Inspect page windows, connection activity, and pending comments |
+| `peck_tabs` | List, open, activate, and close page windows |
+| `peck_navigate` | Open an HTTP(S) URL in a specific page window |
 | `peck_snapshot` | Read page text and interactive elements |
 | `peck_evaluate` | Inspect or interact with a page using JavaScript |
 | `peck_screenshot` | Capture a page image |
@@ -90,7 +98,7 @@ in SQLite for the next session. Peck never runs an additional coding agent.
 | `peck_annotation_get` | Fetch one comment, screenshot, and frozen context |
 | `peck_annotation_update` | Acknowledge, reply, or resolve with a summary |
 | `peck_watch_annotations` | Wait for new or reopened feedback |
-| `peck_window` | Show or hide the existing browser window |
+| `peck_window` | Show or hide a page window without reloading it |
 
 Page contents are untrusted evidence. Temporary DOM edits are not source fixes.
 The coding agent remains responsible for locating, changing, and verifying the
@@ -98,8 +106,8 @@ actual project using its existing tools and permissions.
 
 ## How it works
 
-Electron provides Chromium and the Node.js runtime. Each tab is a sandboxed,
-context-isolated WebContentsView. CDP captures browser events; a small isolated
+Electron provides Chromium and the Node.js runtime. Each page window holds the
+toolbar shell and a sandboxed, context-isolated WebContentsView. CDP captures browser events; a small isolated
 preload provides the DOM picker. UI and MCP read the same SQLite data.
 
 - Local data: `~/Library/Application Support/Peck` on macOS.
@@ -134,10 +142,10 @@ xvfb-run -a -s '-screen 0 1600x1100x24' npm run smoke
 npm run package:mac
 ```
 
-The smoke script drives actual Electron tabs and the actual MCP protocol. It
+The smoke script drives actual Electron windows and the actual MCP protocol. It
 checks element selection, screenshot/context delivery, real HTTP failures,
 redaction, authentication, reply synchronization, background state, multiple
-tabs, the stdio bridge, and persistence across restart. Artifacts are written to
+windows, the stdio bridge, and persistence across restart. Artifacts are written to
 `output/playwright/`. See [AGENTS.md](AGENTS.md) for project rules.
 
 ## Demo limits
@@ -145,8 +153,8 @@ tabs, the stdio bridge, and persistence across restart. Artifacts are written to
 - DOM picking targets the top-level document. Cross-origin frames, closed
   shadow roots, area selection, and framework component source mapping are
   future work. Canvas content can be selected only as a canvas element.
-- Up to eight live tabs share one dedicated Peck profile. Tabs are not restored
-  after fully quitting. Comments are restored.
+- Up to eight page windows share one dedicated Peck profile. Windows are not
+  restored after fully quitting. Comments are restored.
 - No automatic source edits, model runtime, closed-session wakeup, updater,
   signed distribution, or macOS performance guarantees are included.
 - WebSocket entries contain frame metadata, not message bodies. Backend logs
@@ -159,7 +167,7 @@ tabs, the stdio bridge, and persistence across restart. Artifacts are written to
 
 Issues and PRs are welcome. Follow [CONTRIBUTING.md](https://github.com/zyx1121/.github/blob/main/CONTRIBUTING.md).
 The UI uses the [ui.zyx.tw](https://ui.zyx.tw) theme in a full-window desktop
-browser layout, with tabs, navigation, and an inspector.
+browser layout: one compact toolbar per page window and an inspector.
 
 ## License
 
