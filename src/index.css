@@ -1,33 +1,31 @@
 @import "./base.css";
 @import "./zyx-theme.css";
 
-body {
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
   margin: 0;
   overflow: hidden;
 }
 button {
   cursor: pointer;
 }
-.peck-title {
+.app-shell {
   display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.peck-mark {
-  display: inline-block;
-  width: 28px;
-  height: 28px;
-  background: currentColor;
-  mask: url("../assets/Peck.svg") center / contain no-repeat;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 .workspace {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   position: relative;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 16px;
   overflow: hidden;
   background: var(--card);
 }
@@ -47,12 +45,37 @@ button {
   gap: 4px;
   border-bottom: 1px solid var(--border);
 }
+.browser-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.browser-tabs::-webkit-scrollbar {
+  display: none;
+}
+.browser-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.browser-actions > [data-slot="button"] {
+  height: 36px;
+}
+.browser-actions > [data-slot="button"][aria-label] {
+  width: 36px;
+}
 .browser-tab {
   height: 36px;
   display: flex;
   align-items: center;
   max-width: 220px;
   min-width: 100px;
+  flex-shrink: 0;
   color: var(--muted-foreground);
   border-radius: 10px;
 }
@@ -77,13 +100,6 @@ button {
   width: 28px;
   height: 28px;
   margin: 4px;
-}
-.version {
-  margin-left: auto;
-  padding: 0 12px;
-  color: var(--muted-foreground);
-  font-size: 14px;
-  white-space: nowrap;
 }
 .address-bar {
   display: flex;

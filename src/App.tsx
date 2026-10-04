@@ -26,7 +26,6 @@ import {
   Unplug,
   X,
 } from "lucide-react"
-import { TaskShell } from "@/components/task-shell"
 import { TaskThemeToggle } from "@/components/task-theme"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -160,36 +159,7 @@ export default function App() {
   const networkEvents = events.filter((e) => e.kind === "network")
   const waiting = !!state?.mcp.waiters
   return (
-    <TaskShell
-      desktop
-      lang="zh-TW"
-      title={
-        <span className="peck-title">
-          <span className="peck-mark" aria-hidden="true" />
-          peck
-        </span>
-      }
-      description="Point it out."
-      actions={
-        <>
-          <button
-            className="connection-indicator"
-            onClick={() => setPanel("connect")}
-          >
-            <Circle
-              className="size-3"
-              fill={waiting ? "currentColor" : "none"}
-            />
-            {waiting ? "Agent 正在等你" : "Local MCP"}
-          </button>
-          <TaskThemeToggle lang="zh-TW" />
-          <Button variant="ghost" size="sm" onClick={() => void call("hide")}>
-            <ArrowDownLeft />
-            背景
-          </Button>
-        </>
-      }
-    >
+    <main className="app-shell" aria-label="Peck">
       {!window.peck ? (
         <div className="empty">
           <Unplug />
@@ -200,32 +170,56 @@ export default function App() {
         <p role="status">正在開啟工作區…</p>
       ) : (
         <section className="workspace" aria-label="瀏覽器工作區">
-          <div className="tab-strip" aria-label="瀏覽器分頁">
-            {state.tabs.map((tab) => (
-              <div
-                className={`browser-tab ${tab.id === state.activeTabId ? "active" : ""}`}
-                key={tab.id}
+          <div className="tab-strip">
+            <div className="browser-tabs" aria-label="瀏覽器分頁">
+              {state.tabs.map((tab) => (
+                <div
+                  className={`browser-tab ${tab.id === state.activeTabId ? "active" : ""}`}
+                  key={tab.id}
+                >
+                  <button
+                    onClick={() => void call("activate", { id: tab.id })}
+                    title={tab.url}
+                  >
+                    <Globe2 className="size-4 shrink-0" />
+                    <span>{tab.title}</span>
+                  </button>
+                  <IconButton
+                    label={`關閉 ${tab.title}`}
+                    disabled={state.tabs.length < 2}
+                    onClick={() => void call("close-tab", { id: tab.id })}
+                  >
+                    <X />
+                  </IconButton>
+                </div>
+              ))}
+              <IconButton label="新增分頁" onClick={() => void call("new-tab")}>
+                <Plus />
+              </IconButton>
+            </div>
+            <nav className="browser-actions" aria-label="瀏覽器操作">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="connection-indicator"
+                onClick={() => setPanel("connect")}
               >
-                <button
-                  onClick={() => void call("activate", { id: tab.id })}
-                  title={tab.url}
-                >
-                  <Globe2 className="size-4 shrink-0" />
-                  <span>{tab.title}</span>
-                </button>
-                <IconButton
-                  label={`關閉 ${tab.title}`}
-                  disabled={state.tabs.length < 2}
-                  onClick={() => void call("close-tab", { id: tab.id })}
-                >
-                  <X />
-                </IconButton>
-              </div>
-            ))}
-            <IconButton label="新增分頁" onClick={() => void call("new-tab")}>
-              <Plus />
-            </IconButton>
-            <span className="version">DEMO {state.version.split("-")[0]}</span>
+                <Circle
+                  className="size-3"
+                  fill={waiting ? "currentColor" : "none"}
+                />
+                {waiting ? "Agent 正在等你" : "Local MCP"}
+              </Button>
+              <TaskThemeToggle lang="zh-TW" />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void call("hide")}
+              >
+                <ArrowDownLeft />
+                背景
+              </Button>
+            </nav>
           </div>
           <div className="address-bar">
             <div className="flex gap-1">
@@ -246,7 +240,7 @@ export default function App() {
               </IconButton>
             </div>
             <form
-              className="grow"
+              className="min-w-0 grow"
               onSubmit={(event) => {
                 event.preventDefault()
                 void call("navigate", { url })
@@ -451,7 +445,7 @@ export default function App() {
           )}
         </section>
       )}
-    </TaskShell>
+    </main>
   )
 }
 function CommentCard({

@@ -158,7 +158,8 @@ tabs, the stdio bridge, and persistence across restart. Artifacts are written to
 ## Contributing
 
 Issues and PRs are welcome. Follow [CONTRIBUTING.md](https://github.com/zyx1121/.github/blob/main/CONTRIBUTING.md).
-The UI uses [ui.zyx.tw](https://ui.zyx.tw) and the task-web shell.
+The UI uses the [ui.zyx.tw](https://ui.zyx.tw) theme in a full-window desktop
+browser layout, with tabs, navigation, and an inspector.
 
 ## License
 
