@@ -112,7 +112,7 @@ try {
     })
   )
   const tools = await client.listTools()
-  assert.equal(tools.tools.length, 16)
+  assert.equal(tools.tools.length, 17)
   // A new window starts its history at the requested page.
   const firstPage = parse(await call("peck_status")).tabs[0]
   assert.ok(firstPage.url.endsWith("/demo"))
@@ -481,6 +481,10 @@ try {
       .length,
     1
   )
+  // Dev server MCP: the built-in demo has none, so the tool says so.
+  const devServer = parse(await call("peck_dev_server"))
+  assert.equal(devServer.available, false)
+  assert.ok(devServer.endpoint.endsWith("/_next/mcp"))
   bridge = new Client({ name: "bridge-smoke", version: "1.0.0" })
   await bridge.connect(
     new StdioClientTransport({
@@ -495,7 +499,7 @@ try {
       },
     })
   )
-  assert.equal((await bridge.listTools()).tools.length, 16)
+  assert.equal((await bridge.listTools()).tools.length, 17)
   assert.ok(
     !(await bridge.callTool({ name: "peck_status", arguments: {} })).isError
   )
@@ -526,6 +530,7 @@ try {
           "trusted click, type, and key input",
           "waiting for navigation, text, selector, and network idle",
           "event cursor",
+          "dev server MCP availability",
           "fresh screenshots of hidden windows",
           "after screenshots in agent replies",
           "bundled stdio bridge",

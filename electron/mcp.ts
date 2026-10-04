@@ -1,6 +1,8 @@
 import { createServer } from "node:http"
 import { randomBytes, timingSafeEqual } from "node:crypto"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
@@ -406,6 +408,64 @@ export async function startMcp(
           })),
           cursor: Math.max(args.afterSequence, ...items.map((a) => a.sequence)),
         })
+      }
+    )
+    tool(
+      "peck_dev_server",
+      "Use the MCP server built into the page's dev server, when there is one. Next.js 16 serves it at /_next/mcp during next dev, with tools such as get_errors, get_routes, get_compilation_issues, get_server_action_by_id, and compile_route. action list returns its tools; action call runs one with arguments. Works when the dev server runs on another machine, because Peck reaches the page origin. Returns available: false otherwise.",
+      {
+        action: z.enum(["list", "call"]).default("list"),
+        name: z.string().max(200).optional(),
+        arguments: z.record(z.unknown()).default({}),
+        tabId: z.string().optional(),
+      },
+      async (args) => {
+        const { info, view } = browser.current(args.tabId ?? browser.activeId)
+        const endpoint = new URL("/_next/mcp", info.url)
+        if (!/^https?:$/.test(endpoint.protocol))
+          return data({ available: false, reason: "Not an HTTP page" })
+        const devClient = new Client({ name: "peck", version: "0.1.0-demo.7" })
+        try {
+          // The page's session carries its cookies and proxy settings.
+          const { session } = view.webContents
+          await devClient.connect(
+            new StreamableHTTPClientTransport(endpoint, {
+              fetch: (url, init) => session.fetch(String(url), init),
+            })
+          )
+        } catch (error) {
+          return data({
+            available: false,
+            endpoint: endpoint.toString(),
+            reason: String(error).slice(0, 300),
+          })
+        }
+        try {
+          if (args.action === "list") {
+            const { tools } = await devClient.listTools()
+            return data({
+              available: true,
+              endpoint: endpoint.toString(),
+              tools: tools.map(({ name, description, inputSchema }) => ({
+                name,
+                description,
+                inputSchema,
+              })),
+            })
+          }
+          if (!args.name) throw new Error("name required for call")
+          const result = await devClient.callTool(
+            { name: args.name, arguments: args.arguments },
+            undefined,
+            { timeout: 30000 }
+          )
+          return {
+            content: result.content as CallToolResult["content"],
+            isError: result.isError === true,
+          }
+        } finally {
+          await devClient.close()
+        }
       }
     )
     tool(

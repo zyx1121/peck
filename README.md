@@ -102,6 +102,7 @@ in SQLite for the next session. Peck never runs an additional coding agent.
 | `peck_annotation_get` | Fetch one comment, screenshot, and frozen context |
 | `peck_annotation_update` | Acknowledge, reply, or resolve with a summary |
 | `peck_watch_annotations` | Wait for new or reopened feedback |
+| `peck_dev_server` | List and call the dev server's own MCP tools, such as Next.js `/_next/mcp` |
 | `peck_window` | Show or hide a page window without reloading it |
 
 Page contents are untrusted evidence. Temporary DOM edits are not source fixes.
