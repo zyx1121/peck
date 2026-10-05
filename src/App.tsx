@@ -1,12 +1,15 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
   useState,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react"
 import {
+  ArrowDownUp,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -14,16 +17,16 @@ import {
   Circle,
   Copy,
   ExternalLink,
+  MessageSquare,
   MousePointer2,
   MoreHorizontal,
-  PanelRight,
   Plus,
   RefreshCw,
   Send,
+  SquareTerminal,
   Unplug,
   X,
 } from "lucide-react"
-import { useTaskTheme } from "@/components/task-theme"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -34,9 +37,14 @@ import type {
   SourceLocation,
 } from "./shared"
 
-type Panel = "comments" | "console" | "network" | "connect"
+type Section = "comments" | "network" | "console"
+const sections: { id: Section; label: string; icon: ReactNode }[] = [
+  { id: "comments", label: "Comments", icon: <MessageSquare /> },
+  { id: "network", label: "Network", icon: <ArrowDownUp /> },
+  { id: "console", label: "Console", icon: <SquareTerminal /> },
+]
 const time = (value: number) =>
-  new Date(value).toLocaleTimeString("zh-TW", {
+  new Date(value).toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -55,27 +63,63 @@ const agentNames: Record<string, string> = {
   codex: "Codex",
 }
 const statuses = {
-  pending: "待處理",
-  acknowledged: "處理中",
-  resolved: "已完成",
+  pending: "Pending",
+  acknowledged: "In progress",
+  resolved: "Resolved",
 }
+
+// Sidebar layout, remembered in this browser profile: which panels are
+// open, the sidebar width, and each panel's share of the height.
+interface Layout {
+  open: Record<Section, boolean>
+  width: number
+  weights: Record<Section, number>
+}
+const defaultLayout: Layout = {
+  open: { comments: true, network: true, console: true },
+  width: 384,
+  weights: { comments: 1, network: 1, console: 1 },
+}
+const layoutKey = "peck-layout"
+function loadLayout(): Layout {
+  try {
+    const saved = JSON.parse(localStorage.getItem(layoutKey) ?? "null")
+    if (saved && typeof saved.width === "number")
+      return {
+        open: { ...defaultLayout.open, ...saved.open },
+        width: saved.width,
+        weights: { ...defaultLayout.weights, ...saved.weights },
+      }
+  } catch {
+    /* Storage is optional. */
+  }
+  return defaultLayout
+}
+const MIN_WIDTH = 280
+const MIN_PANEL = 96
+
 function IconButton({
   label,
+  title = label,
   children,
   onClick,
   disabled = false,
+  pressed,
 }: {
   label: string
+  title?: string
   children: ReactNode
   onClick: () => void
   disabled?: boolean
+  pressed?: boolean
 }) {
   return (
     <Button
       variant="ghost"
       size="icon-lg"
-      title={label}
+      title={title}
       aria-label={label}
+      aria-pressed={pressed}
       onClick={onClick}
       disabled={disabled}
     >
@@ -85,22 +129,41 @@ function IconButton({
 }
 
 export default function App() {
-  const { toggle } = useTaskTheme()
   const [editingUrl, setEditingUrl] = useState(false)
-  const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [layout, setLayout] = useState<Layout>(loadLayout)
+  const [mcpOpen, setMcpOpen] = useState(false)
+  const [resizing, setResizing] = useState(false)
   const address = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<PeckState | null>(null)
   const [url, setUrl] = useState("")
-  const [panel, setPanel] = useState<Panel>("comments")
   const [comment, setComment] = useState("")
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState("")
-  // The native page view covers everything left of the inspector, so notices
-  // open the inspector to stay visible.
-  const showNotice = useCallback((message: string) => {
-    setNotice(message)
-    setInspectorOpen(true)
-  }, [])
+  const panels = useRef<Partial<Record<Section, HTMLElement | null>>>({})
+  useEffect(() => {
+    try {
+      localStorage.setItem(layoutKey, JSON.stringify(layout))
+    } catch {
+      /* Storage is optional. */
+    }
+  }, [layout])
+  const setOpen = useCallback(
+    (id: Section, open: boolean) =>
+      setLayout((current) => ({
+        ...current,
+        open: { ...current.open, [id]: open },
+      })),
+    []
+  )
+  // The native page view covers everything left of the sidebar, so notices
+  // open the comments panel to stay visible.
+  const showNotice = useCallback(
+    (message: string) => {
+      setNotice(message)
+      setOpen("comments", true)
+    },
+    [setOpen]
+  )
   const viewport = useRef<HTMLDivElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const selectionKey = useRef("")
@@ -129,27 +192,24 @@ export default function App() {
         ? `${next.page.id}:${next.selection.selector}`
         : ""
       if (key && key !== selectionKey.current) {
-        setPanel("comments")
-        setInspectorOpen(true)
+        setMcpOpen(false)
+        setOpen("comments", true)
         setTimeout(() => textarea.current?.focus(), 100)
       }
       selectionKey.current = key
     }
     void window.peck.state().then(receive)
     return window.peck.subscribe(receive)
-  }, [])
+  }, [setOpen])
   useEffect(() => {
     if (!window.peck) return
     return window.peck.onCommand((command) => {
-      if (command === "connect") {
-        setPanel("connect")
-        setInspectorOpen(true)
-      } else if (command === "theme") toggle()
+      if (command === "connect") setMcpOpen(true)
       else if (command === "address") address.current?.focus()
       else if (command.startsWith("error:"))
         showNotice(command.slice(6).replace(/^Error: /, ""))
     })
-  }, [toggle, showNotice])
+  }, [showNotice])
   // An empty window is ready for a URL.
   const focusedEmpty = useRef(false)
   useEffect(() => {
@@ -186,6 +246,72 @@ export default function App() {
     const timer = setTimeout(() => setNotice(""), 6000)
     return () => clearTimeout(timer)
   }, [notice])
+  // Drag the sidebar's left edge to change its width.
+  function resizeSidebar(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    const startX = event.clientX
+    // The rendered width, which CSS caps when the window is narrow.
+    const startWidth = handle.parentElement?.getBoundingClientRect().width ?? 0
+    setResizing(true)
+    const move = (e: PointerEvent) => {
+      const width = Math.round(
+        Math.min(
+          Math.max(startWidth - (e.clientX - startX), MIN_WIDTH),
+          window.innerWidth * 0.7
+        )
+      )
+      setLayout((current) => ({ ...current, width }))
+    }
+    const end = () => {
+      setResizing(false)
+      handle.removeEventListener("pointermove", move)
+      handle.removeEventListener("pointerup", end)
+      handle.removeEventListener("pointercancel", end)
+    }
+    handle.addEventListener("pointermove", move)
+    handle.addEventListener("pointerup", end)
+    handle.addEventListener("pointercancel", end)
+  }
+  // Drag the divider between two panels to move height from one to the other.
+  function resizePanels(
+    event: ReactPointerEvent<HTMLDivElement>,
+    above: Section,
+    below: Section
+  ) {
+    event.preventDefault()
+    const handle = event.currentTarget
+    const top = panels.current[above]?.getBoundingClientRect().height ?? 0
+    const bottom = panels.current[below]?.getBoundingClientRect().height ?? 0
+    if (!top || !bottom) return
+    handle.setPointerCapture(event.pointerId)
+    const startY = event.clientY
+    const total = layout.weights[above] + layout.weights[below]
+    const move = (e: PointerEvent) => {
+      const height = Math.min(
+        Math.max(top + e.clientY - startY, MIN_PANEL),
+        top + bottom - MIN_PANEL
+      )
+      const share = height / (top + bottom)
+      setLayout((current) => ({
+        ...current,
+        weights: {
+          ...current.weights,
+          [above]: total * share,
+          [below]: total * (1 - share),
+        },
+      }))
+    }
+    const end = () => {
+      handle.removeEventListener("pointermove", move)
+      handle.removeEventListener("pointerup", end)
+      handle.removeEventListener("pointercancel", end)
+    }
+    handle.addEventListener("pointermove", move)
+    handle.addEventListener("pointerup", end)
+    handle.addEventListener("pointercancel", end)
+  }
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!comment.trim() || busy) return
@@ -194,7 +320,7 @@ export default function App() {
     setBusy(false)
     if (result) {
       setComment("")
-      showNotice("留言已送出")
+      showNotice("Comment sent")
     }
   }
   const annotations = state?.annotations ?? []
@@ -202,7 +328,75 @@ export default function App() {
   const events = state?.events ?? []
   const consoleEvents = events.filter((e) => e.kind !== "network")
   const networkEvents = events.filter((e) => e.kind === "network")
+  const serverEvents = events.filter((e) => e.kind === "server")
   const waiting = !!state?.mcp.waiters
+  const openSections = sections.filter((s) => layout.open[s.id])
+  const sidebarOpen = mcpOpen || openSections.length > 0
+  const counts: Record<Section, number> = {
+    comments: pending,
+    network: networkEvents.length,
+    console: consoleEvents.filter((e) => e.level === "error").length,
+  }
+  function body(id: Section) {
+    if (!state) return null
+    if (id === "network" || id === "console")
+      return (
+        <EventList
+          kind={id}
+          events={id === "console" ? consoleEvents : networkEvents}
+          server={serverEvents}
+        />
+      )
+    return (
+      <>
+        {state.selection && (
+          <form className="composer" onSubmit={submit}>
+            <div className="flex items-center justify-between">
+              <span className="eyebrow">Selected element</span>
+              <IconButton
+                label="Clear selection"
+                onClick={() => void call("clear-selection")}
+              >
+                <X />
+              </IconButton>
+            </div>
+            <code className="selector">{state.selection.selector}</code>
+            {state.selection.location && (
+              <code className="source-location">
+                {where(state.selection.location)}
+              </code>
+            )}
+            <p className="selected-text">
+              {state.selection.text.slice(0, 140) || `<${state.selection.tag}>`}
+            </p>
+            <Textarea
+              ref={textarea}
+              aria-label="Comment"
+              placeholder="Comment"
+              rows={4}
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              maxLength={4000}
+            />
+            <div className="composer-footer">
+              <Button
+                className="h-9"
+                type="submit"
+                disabled={busy || !comment.trim()}
+              >
+                <Send />
+                Send
+              </Button>
+            </div>
+          </form>
+        )}
+        {waiting && <div className="section-label">Agent waiting</div>}
+        {annotations.map((item) => (
+          <CommentCard key={item.id} item={item} call={call} />
+        ))}
+      </>
+    )
+  }
   return (
     <main
       className={`app-shell ${state?.platform === "darwin" ? "macos" : ""} ${state?.fullscreen ? "fullscreen" : ""}`}
@@ -211,24 +405,24 @@ export default function App() {
       {!window.peck ? (
         <div className="empty">
           <Unplug />
-          <h2>請在 Peck 桌面 app 開啟</h2>
-          <p>此介面需要內建的 Chromium 與 local MCP。</p>
+          <h2>Open this in the Peck app</h2>
+          <p>It needs Peck's Chromium and local MCP.</p>
         </div>
       ) : !state ? (
-        <p role="status">正在開啟工作區…</p>
+        <p role="status">Opening…</p>
       ) : (
-        <section className="workspace" aria-label="瀏覽器工作區">
-          <header className="address-bar" aria-label="瀏覽器工具列">
+        <section className="workspace" aria-label="Browser">
+          <header className="address-bar" aria-label="Toolbar">
             <div className="navigation-controls">
               <IconButton
-                label="上一頁"
+                label="Back"
                 disabled={!state.page.canGoBack}
                 onClick={() => void call("back")}
               >
                 <ArrowLeft />
               </IconButton>
               <IconButton
-                label="下一頁"
+                label="Forward"
                 disabled={!state.page.canGoForward}
                 onClick={() => void call("forward")}
               >
@@ -246,7 +440,7 @@ export default function App() {
               <Input
                 ref={address}
                 className={`location-input ${editingUrl ? "editing" : ""}`}
-                aria-label="網址"
+                aria-label="Address"
                 title={state.page.url}
                 value={editingUrl ? url : state.page.title || state.page.url}
                 onFocus={() => {
@@ -266,11 +460,11 @@ export default function App() {
                     address.current?.blur()
                   }
                 }}
-                placeholder="輸入網址"
+                placeholder="Enter URL"
                 spellCheck={false}
                 autoComplete="off"
               />
-              <IconButton label="重新整理" onClick={() => void call("reload")}>
+              <IconButton label="Reload" onClick={() => void call("reload")}>
                 <RefreshCw
                   className={
                     state.page.loading ? "motion-safe:animate-spin" : ""
@@ -279,240 +473,123 @@ export default function App() {
               </IconButton>
             </form>
             <div className="window-actions">
-              <Button
-                variant={state.picking ? "secondary" : "ghost"}
-                size="icon-lg"
-                aria-label="選取元件"
-                aria-pressed={state.picking}
-                title={state.picking ? "點選畫面中的元件" : "選取元件 (⌘⇧C)"}
+              <IconButton
+                label="Select element"
+                title={
+                  state.picking
+                    ? "Click an element on the page"
+                    : "Select element (⌘⇧C)"
+                }
+                pressed={state.picking}
                 onClick={() => {
-                  setInspectorOpen(true)
+                  setMcpOpen(false)
+                  setOpen("comments", true)
                   void call("pick", { enabled: !state.picking })
                 }}
               >
                 <MousePointer2 />
-              </Button>
-              <IconButton
-                label={inspectorOpen ? "隱藏檢查面板" : "顯示檢查面板"}
-                onClick={() => setInspectorOpen(!inspectorOpen)}
-              >
-                <PanelRight />
               </IconButton>
+              {sections.map((s) => (
+                <IconButton
+                  key={s.id}
+                  label={s.label}
+                  pressed={!mcpOpen && layout.open[s.id]}
+                  onClick={() => {
+                    // Local MCP covers the panels: leave it and show this one.
+                    if (mcpOpen) {
+                      setMcpOpen(false)
+                      setOpen(s.id, true)
+                    } else setOpen(s.id, !layout.open[s.id])
+                  }}
+                >
+                  {s.icon}
+                </IconButton>
+              ))}
               <IconButton
-                label="新增視窗"
+                label="New window"
                 onClick={() => void call("new-window")}
               >
                 <Plus />
               </IconButton>
-              <IconButton label="更多選項" onClick={() => void call("menu")}>
+              <IconButton label="More" onClick={() => void call("menu")}>
                 <MoreHorizontal />
               </IconButton>
             </div>
           </header>
           <div className="work-area">
-            <div
-              ref={viewport}
-              className="page-viewport"
-              aria-label="專案網頁"
-            />
+            <div ref={viewport} className="page-viewport" aria-label="Page" />
             <aside
-              className={`inspector ${inspectorOpen ? "" : "closed"}`}
-              aria-label="檢查與回饋"
-              aria-hidden={!inspectorOpen}
-              inert={!inspectorOpen}
+              className={`inspector ${sidebarOpen ? "" : "closed"} ${resizing ? "resizing" : ""}`}
+              style={{ "--inspector-width": `${layout.width}px` } as never}
+              aria-label="Inspector"
+              aria-hidden={!sidebarOpen}
+              inert={!sidebarOpen}
             >
+              <div
+                className="sidebar-resizer"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize sidebar"
+                onPointerDown={resizeSidebar}
+              />
               <div className="inspector-body">
-                <div
-                  className="panel-tabs"
-                  role="tablist"
-                  aria-label="檢查面板"
-                >
-                  {(
-                    [
-                      ["comments", "留言", pending],
-                      [
-                        "console",
-                        "Console",
-                        consoleEvents.filter((e) => e.level === "error").length,
-                      ],
-                      ["network", "Network", networkEvents.length],
-                    ] as const
-                  ).map(([id, label, count]) => (
-                    <button
-                      role="tab"
-                      aria-selected={panel === id}
-                      key={id}
-                      onClick={() => setPanel(id)}
-                    >
-                      {label}
-                      {count > 0 && <span>{count}</span>}
-                    </button>
-                  ))}
-                </div>
-                <div className="panel-body" role="tabpanel">
-                  {panel === "comments" && (
-                    <>
-                      {state.selection ? (
-                        <form className="composer" onSubmit={submit}>
-                          <div className="flex items-center justify-between">
-                            <span className="eyebrow">已選取元件</span>
-                            <IconButton
-                              label="取消選取"
-                              onClick={() => void call("clear-selection")}
-                            >
-                              <X />
-                            </IconButton>
-                          </div>
-                          <code className="selector">
-                            {state.selection.selector}
-                          </code>
-                          {state.selection.location && (
-                            <code className="source-location">
-                              {where(state.selection.location)}
-                            </code>
-                          )}
-                          <p className="selected-text">
-                            {state.selection.text.slice(0, 140) ||
-                              `<${state.selection.tag}>`}
-                          </p>
-                          <Textarea
-                            ref={textarea}
-                            aria-label="修改意見"
-                            placeholder="修改意見"
-                            rows={4}
-                            value={comment}
-                            onChange={(event) => setComment(event.target.value)}
-                            maxLength={4000}
-                          />
-                          <div className="composer-footer">
-                            <Button
-                              className="h-9"
-                              type="submit"
-                              disabled={busy || !comment.trim()}
-                            >
-                              <Send />
-                              送出留言
-                            </Button>
-                          </div>
-                        </form>
-                      ) : null}
-                      {(annotations.length > 0 || waiting) && (
-                        <div className="section-label">
-                          <span>
-                            {annotations.length > 0 &&
-                              `${annotations.length} 則留言`}
-                          </span>
-                          <span>{waiting && "Agent 等待中"}</span>
-                        </div>
-                      )}
-                      {annotations.map((item) => (
-                        <CommentCard key={item.id} item={item} call={call} />
-                      ))}
-                    </>
-                  )}
-                  {(panel === "console" || panel === "network") && (
-                    <EventList
-                      kind={panel}
-                      events={
-                        panel === "console" ? consoleEvents : networkEvents
-                      }
-                      server={events.filter((e) => e.kind === "server")}
-                    />
-                  )}
-                  {panel === "connect" && (
-                    <div className="connect">
-                      <div className="section-label">Local MCP</div>
-                      <code>{state.mcp.url}</code>
-                      <Button
-                        className="mt-5 h-9"
-                        onClick={async () => {
-                          const copied = await call("copy-config")
-                          if (copied) showNotice("已複製 MCP 設定")
-                        }}
+                {mcpOpen ? (
+                  <section className="panel" aria-label="Local MCP">
+                    <header className="panel-header">
+                      <span>Local MCP</span>
+                      <IconButton
+                        label="Close Local MCP"
+                        onClick={() => setMcpOpen(false)}
                       >
-                        <Copy />
-                        複製 MCP 設定
-                      </Button>
-                      <div className="connection-state">
-                        <Circle
-                          className="size-3"
-                          fill={waiting ? "currentColor" : "none"}
-                        />
-                        <span>
-                          {waiting
-                            ? "Agent 正在等待新留言"
-                            : state.mcp.clients
-                              ? "已收到 agent 呼叫"
-                              : "等待 agent 連線"}
-                        </span>
-                      </div>
-                      {state.agents.map((a) => (
-                        <div className="agent-session" key={a.sessionId}>
-                          <div>
-                            <p>
-                              {agentNames[a.agent] ?? a.agent} ·{" "}
-                              {a.sessionId.slice(0, 8)}
-                            </p>
-                            <span>{a.cwd}</span>
-                            <span>
-                              {a.watching
-                                ? "等待留言中"
-                                : a.running
-                                  ? "執行中"
-                                  : "已結束"}{" "}
-                              · {time(a.lastSeen)}
-                            </span>
-                            {a.command && (
-                              <label className="auto-resume">
-                                <input
-                                  type="checkbox"
-                                  checked={!!a.autoResume}
-                                  onChange={(event) =>
-                                    void call("auto-resume", {
-                                      sessionId: a.sessionId,
-                                      enabled: event.target.checked,
-                                    })
-                                  }
-                                />
-                                新留言時接回這個對話
-                              </label>
-                            )}
-                            {a.autoResume && a.command && (
-                              <code className="agent-command">{a.command}</code>
-                            )}
-                            {a.lastRun && (
-                              <span>
-                                上次接回 · {time(a.lastRun.at)} ·{" "}
-                                {a.lastRun.running
-                                  ? "執行中"
-                                  : a.lastRun.exitCode === 0
-                                    ? "完成"
-                                    : "失敗"}
-                              </span>
-                            )}
-                          </div>
-                          <IconButton
-                            label="移除"
-                            onClick={() =>
-                              void call("forget-agent", {
-                                sessionId: a.sessionId,
-                              })
-                            }
-                          >
-                            <X />
-                          </IconButton>
-                        </div>
-                      ))}
-                      <a
-                        href="https://github.com/zyx1121/peck"
-                        className="inline-flex items-center gap-2 text-sm"
-                      >
-                        設定說明
-                        <ExternalLink className="size-4" />
-                      </a>
+                        <X />
+                      </IconButton>
+                    </header>
+                    <div className="panel-body">
+                      <McpPanel
+                        state={state}
+                        waiting={waiting}
+                        call={call}
+                        showNotice={showNotice}
+                      />
                     </div>
-                  )}
-                </div>
+                  </section>
+                ) : (
+                  openSections.map((s, index) => (
+                    <Fragment key={s.id}>
+                      {index > 0 && (
+                        <div
+                          className="panel-resizer"
+                          role="separator"
+                          aria-orientation="horizontal"
+                          aria-label={`Resize ${openSections[index - 1].label} and ${s.label}`}
+                          onPointerDown={(event) =>
+                            resizePanels(
+                              event,
+                              openSections[index - 1].id,
+                              s.id
+                            )
+                          }
+                        />
+                      )}
+                      <section
+                        ref={(element) => {
+                          panels.current[s.id] = element
+                        }}
+                        className="panel"
+                        style={{ flexGrow: layout.weights[s.id] }}
+                        aria-label={s.label}
+                      >
+                        <header className="panel-header">
+                          <span>{s.label}</span>
+                          {counts[s.id] > 0 && (
+                            <span className="count">{counts[s.id]}</span>
+                          )}
+                        </header>
+                        <div className="panel-body">{body(s.id)}</div>
+                      </section>
+                    </Fragment>
+                  ))
+                )}
               </div>
             </aside>
           </div>
@@ -524,6 +601,102 @@ export default function App() {
         </section>
       )}
     </main>
+  )
+}
+function McpPanel({
+  state,
+  waiting,
+  call,
+  showNotice,
+}: {
+  state: PeckState
+  waiting: boolean
+  call: (action: string, args?: Record<string, unknown>) => Promise<unknown>
+  showNotice: (message: string) => void
+}) {
+  return (
+    <div className="connect">
+      <code>{state.mcp.url}</code>
+      <Button
+        className="mt-5 h-9"
+        onClick={async () => {
+          const copied = await call("copy-config")
+          if (copied) showNotice("Copied MCP config")
+        }}
+      >
+        <Copy />
+        Copy MCP config
+      </Button>
+      <div className="connection-state">
+        <Circle className="size-3" fill={waiting ? "currentColor" : "none"} />
+        <span>
+          {waiting
+            ? "Agent waiting for comments"
+            : state.mcp.clients
+              ? "Agent connected"
+              : "No agent connected"}
+        </span>
+      </div>
+      {state.agents.map((a) => (
+        <div className="agent-session" key={a.sessionId}>
+          <div>
+            <p>
+              {agentNames[a.agent] ?? a.agent} · {a.sessionId.slice(0, 8)}
+            </p>
+            <span>{a.cwd}</span>
+            <span>
+              {a.watching ? "Watching" : a.running ? "Running" : "Ended"} ·{" "}
+              {time(a.lastSeen)}
+            </span>
+            {a.command && (
+              <label className="auto-resume">
+                <input
+                  type="checkbox"
+                  checked={!!a.autoResume}
+                  onChange={(event) =>
+                    void call("auto-resume", {
+                      sessionId: a.sessionId,
+                      enabled: event.target.checked,
+                    })
+                  }
+                />
+                Resume on new comments
+              </label>
+            )}
+            {a.autoResume && a.command && (
+              <code className="agent-command">{a.command}</code>
+            )}
+            {a.lastRun && (
+              <span>
+                Last resume · {time(a.lastRun.at)} ·{" "}
+                {a.lastRun.running
+                  ? "Running"
+                  : a.lastRun.exitCode === 0
+                    ? "Done"
+                    : "Failed"}
+              </span>
+            )}
+          </div>
+          <IconButton
+            label="Remove"
+            onClick={() =>
+              void call("forget-agent", {
+                sessionId: a.sessionId,
+              })
+            }
+          >
+            <X />
+          </IconButton>
+        </div>
+      ))}
+      <a
+        href="https://github.com/zyx1121/peck"
+        className="inline-flex items-center gap-2 text-sm"
+      >
+        Setup guide
+        <ExternalLink className="size-4" />
+      </a>
+    </div>
   )
 }
 function CommentCard({
@@ -568,7 +741,7 @@ function CommentCard({
           }
         }}
       >
-        {expanded ? "收起畫面" : "查看當時畫面"}
+        {expanded ? "Hide screenshot" : "Show screenshot"}
         <span>
           {Math.round(item.element.rect.width)} ×{" "}
           {Math.round(item.element.rect.height)}
@@ -578,11 +751,11 @@ function CommentCard({
         <div className="context-image">
           {image ? (
             <img
-              alt="留言當時的網頁截圖"
+              alt="The page when the comment was made"
               src={`data:image/jpeg;base64,${image}`}
             />
           ) : (
-            <p>這則留言沒有截圖。</p>
+            <p>No screenshot for this comment.</p>
           )}
           <p>{item.element.url}</p>
         </div>
@@ -590,7 +763,7 @@ function CommentCard({
       {item.replies.map((r, i) => (
         <div className="reply" key={i}>
           <span>
-            {r.author === "agent" ? "Agent" : "你"} · {time(r.time)}
+            {r.author === "agent" ? "Agent" : "You"} · {time(r.time)}
           </span>
           <p>{r.text}</p>
           {r.hasImage && <ReplyImage id={item.id} index={i} call={call} />}
@@ -609,13 +782,13 @@ function CommentCard({
         >
           <Input
             className="h-9 text-xs"
-            aria-label="回覆留言"
-            placeholder="繼續回覆…"
+            aria-label="Reply"
+            placeholder="Reply…"
             value={reply}
             onChange={(e) => setReply(e.target.value)}
           />
           <IconButton
-            label="送出回覆"
+            label="Send reply"
             disabled={!reply.trim()}
             onClick={() => {
               void call("reply", { id: item.id, text: reply })
@@ -631,7 +804,7 @@ function CommentCard({
           className="context-button"
           onClick={() => void call("reopen", { id: item.id })}
         >
-          重新開啟
+          Reopen
         </button>
       )}
     </article>
@@ -660,11 +833,14 @@ function ReplyImage({
           }
         }}
       >
-        {expanded ? "收起修改後畫面" : "查看修改後畫面"}
+        {expanded ? "Hide after screenshot" : "Show after screenshot"}
       </button>
       {expanded && image && (
         <div className="context-image">
-          <img alt="修改後的元件截圖" src={`data:image/jpeg;base64,${image}`} />
+          <img
+            alt="The element after the fix"
+            src={`data:image/jpeg;base64,${image}`}
+          />
         </div>
       )}
     </>
@@ -674,7 +850,7 @@ function ServerRecords({ records }: { records: BrowserEvent[] }) {
   if (!records.length) return null
   return (
     <div className="server-records">
-      <span>伺服器紀錄</span>
+      <span>Server</span>
       {records.map((r) => (
         <p className={`event-${r.level}`} key={r.id}>
           {r.message}

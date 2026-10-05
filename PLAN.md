@@ -10,10 +10,12 @@ coding agent. Tagline: **Point it out.** By zyx.
   MCP and profile.
 - The browser workspace fills the window. A single Safari-like toolbar row holds
   the traffic lights, navigation, the page title (the address while editing),
-  element selection, the inspector toggle, a new window button, and a menu for
-  low-frequency actions. The page and inspector extend to the bottom edge. No
-  outer website template, product heading, corner links, status footer, or
-  copyright footer.
+  element selection, toggles for the Comments, Network, and Console panels, a
+  new window button, and a menu for low-frequency actions. The panels stack in
+  one resizable sidebar. The page and sidebar extend to the bottom edge. The
+  interface is English and black only, separated by hairlines, without gray
+  layers or a light theme. No outer website template, product heading, corner
+  links, status footer, or copyright footer.
 - Visible and background modes preserve the same live page. No separate
   headless engine and no embedded model. Peck never starts a new agent. When
   the user opts a registered conversation in, new user feedback resumes it

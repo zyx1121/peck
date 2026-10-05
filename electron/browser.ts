@@ -161,10 +161,13 @@ export class Browser extends EventEmitter {
       navigatedAt: 0,
       actedAt: 0,
     }
-    // The internal about:blank document stays out of the UI and history.
+    // The internal about:blank document stays out of the UI and history,
+    // and its white page stays hidden until the first navigation.
     let phase: "blank" | "first" | "ready" = "blank"
+    view.setVisible(false)
     const begin = () => {
       if (phase === "blank") phase = "first"
+      view.setVisible(true)
     }
     this.tabs.set(id, { info, view, window, activity, begin })
     window.contentView.addChildView(view)

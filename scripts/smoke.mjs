@@ -130,6 +130,8 @@ const shellOf = (electronApp) =>
   )
 const windowCount = () =>
   app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
+// The sidebar width after the resize test, checked again after a restart.
+let resizedWidth = 0
 try {
   console.log("Electron launched; waiting for shell")
   const shell = await shellOf(app)
@@ -139,7 +141,7 @@ try {
     () =>
       shell.evaluate(
         () =>
-          document.activeElement?.getAttribute("aria-label") === "網址" &&
+          document.activeElement?.getAttribute("aria-label") === "Address" &&
           document.activeElement.value === ""
       ),
     "focused empty address field"
@@ -170,7 +172,7 @@ try {
   )
   assert.equal((await shell.locator(".address-bar").boundingBox()).y, 0)
   assert.equal((await shell.locator(".page-viewport").boundingBox()).y, 56)
-  const address = shell.getByRole("textbox", { name: "網址" })
+  const address = shell.getByRole("textbox", { name: "Address" })
   // The empty window focused the field; leave it to see the page title.
   await address.press("Escape")
   await waitFor(
@@ -187,20 +189,88 @@ try {
   assert.ok((await address.inputValue()).endsWith("/demo"))
   await address.press("Escape")
   assert.equal(await address.inputValue(), "Peck Playground")
-  await shell.getByRole("button", { name: "隱藏檢查面板" }).click()
-  await waitFor(
-    async () => !(await shell.locator(".inspector").isVisible()),
-    "hidden inspector"
+  // Comments, Network, and Console share the sidebar. Each has a toolbar
+  // toggle, and all start open.
+  const panelButton = (name) => shell.getByRole("button", { name, exact: true })
+  const panel = (name) => shell.getByRole("region", { name, exact: true })
+  const showPanel = async (name) => {
+    if ((await panelButton(name).getAttribute("aria-pressed")) !== "true")
+      await panelButton(name).click()
+    await panel(name).waitFor()
+  }
+  for (const name of ["Comments", "Network", "Console"]) {
+    assert.equal(await panelButton(name).getAttribute("aria-pressed"), "true")
+    await panel(name).waitFor()
+  }
+  const drag = async (box, dx, dy) => {
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await shell.mouse.move(x, y)
+    await shell.mouse.down()
+    await shell.mouse.move(x + dx, y + dy, { steps: 5 })
+    await shell.mouse.up()
+  }
+  // Dragging the sidebar's edge widens it, and the page view follows.
+  const inspector = shell.locator(".inspector")
+  const narrow = (await inspector.boundingBox()).width
+  await drag(await shell.locator(".sidebar-resizer").boundingBox(), -100, 0)
+  resizedWidth = (await inspector.boundingBox()).width
+  assert.ok(
+    Math.abs(resizedWidth - narrow - 100) <= 2,
+    `sidebar ${narrow} -> ${resizedWidth}`
   )
-  await shell.getByRole("button", { name: "顯示檢查面板" }).click()
-  await shell.locator(".inspector").waitFor()
+  await waitFor(async () => {
+    const viewport = await shell.locator(".page-viewport").boundingBox()
+    const view = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children[0].getBounds()
+    )
+    return Math.abs(view.width - viewport.width) <= 1
+  }, "page view following the sidebar")
+  // Dragging a divider moves height between the two panels beside it.
+  const commentsHeight = (await panel("Comments").boundingBox()).height
+  const networkHeight = (await panel("Network").boundingBox()).height
+  await drag(
+    await shell
+      .getByRole("separator", { name: "Resize Comments and Network" })
+      .boundingBox(),
+    0,
+    60
+  )
+  assert.ok(
+    Math.abs(
+      (await panel("Comments").boundingBox()).height - commentsHeight - 60
+    ) <= 2
+  )
+  assert.ok(
+    Math.abs(
+      networkHeight - (await panel("Network").boundingBox()).height - 60
+    ) <= 2
+  )
+  // A closed panel leaves its space to the others; with all three closed,
+  // the sidebar slides away.
+  await panelButton("Network").click()
+  await panel("Network").waitFor({ state: "detached" })
+  assert.equal(
+    await panelButton("Network").getAttribute("aria-pressed"),
+    "false"
+  )
+  await panel("Console").waitFor()
+  await panelButton("Comments").click()
+  await panelButton("Console").click()
+  await waitFor(async () => !(await inspector.isVisible()), "closed sidebar")
+  for (const name of ["Comments", "Network", "Console"]) await showPanel(name)
+  await inspector.waitFor()
+  const layout = JSON.parse(
+    await shell.evaluate(() => localStorage.getItem("peck-layout"))
+  )
+  assert.ok(Math.abs(layout.width - resizedWidth) <= 1)
   const tools = await client.listTools()
   assert.equal(tools.tools.length, 18)
   // A new window starts its history at the requested page.
   const firstPage = parse(await call("peck_status")).tabs[0]
   assert.ok(firstPage.url.endsWith("/demo"))
   assert.equal(firstPage.canGoBack, false)
-  assert.ok(await shell.getByRole("button", { name: "上一頁" }).isDisabled())
+  assert.ok(await shell.getByRole("button", { name: "Back" }).isDisabled())
   assert.equal(
     (await fetch(config.url, { method: "POST", body: "{}" })).status,
     403
@@ -281,12 +351,14 @@ try {
     afterSequence: 0,
     timeoutMs: 15000,
   })
-  await shell.getByRole("button", { name: "選取元件", exact: true }).click()
+  await shell
+    .getByRole("button", { name: "Select element", exact: true })
+    .click()
   await guest.locator("#headline").click()
   await shell
-    .getByRole("textbox", { name: "修改意見" })
+    .getByRole("textbox", { name: "Comment", exact: true })
     .fill("把標題改成中文，字小一點。")
-  await shell.getByRole("button", { name: "送出留言", exact: true }).click()
+  await shell.getByRole("button", { name: "Send", exact: true }).click()
   const received = parse(await watch)
   assert.equal(received.annotations.length, 1)
   const item = received.annotations[0]
@@ -304,14 +376,14 @@ try {
     status: "acknowledged",
     reply: "測試已收到元件與截圖，正在驗證回覆同步。",
   })
-  await shell.getByText("處理中", { exact: true }).waitFor()
+  await shell.getByText("In progress", { exact: true }).waitFor()
   await call("peck_annotation_update", {
     id: item.id,
     status: "resolved",
     reply:
       "端到端測試：已驗證選取、截圖、422 紀錄與留言同步。這則測試沒有修改專案原始碼。",
   })
-  await shell.getByText("已完成", { exact: true }).waitFor()
+  await shell.getByText("Resolved", { exact: true }).waitFor()
   // After screenshot in a reply, and a note when the selector is gone.
   await call("peck_annotation_update", {
     id: item.id,
@@ -322,8 +394,8 @@ try {
   assert.equal(withAfter.content.filter((c) => c.type === "image").length, 2)
   assert.ok(parse(withAfter).replies.at(-1).hasImage)
   assert.ok(!JSON.stringify(parse(withAfter)).includes("/9j/"))
-  await shell.getByText("查看修改後畫面", { exact: true }).click()
-  await shell.getByRole("img", { name: "修改後的元件截圖" }).waitFor()
+  await shell.getByText("Show after screenshot", { exact: true }).click()
+  await shell.getByRole("img", { name: "The element after the fix" }).waitFor()
   await call("peck_evaluate", {
     expression:
       "document.querySelector('#headline').id = 'headline-moved'; true",
@@ -354,8 +426,8 @@ try {
         })
   if (composed)
     await writeFile(`${output}/desktop.png`, Buffer.from(composed, "base64"))
-  await shell.getByRole("tab", { name: /^Network/ }).click()
-  await shell.locator(".event").first().click()
+  await showPanel("Network")
+  await panel("Network").locator(".event").first().click()
   const networkShot =
     process.platform !== "linux"
       ? undefined
@@ -386,8 +458,14 @@ try {
     BrowserWindow.getAllWindows()[0].setSize(1080, 780)
   )
   await waitFor(
-    async () => (await shell.locator(".inspector").boundingBox()).width <= 384,
-    "compact layout"
+    async () => (await shell.evaluate(() => innerWidth)) < 1200,
+    "compact window"
+  )
+  // The sidebar keeps its width while it fits in 70% of the window.
+  assert.ok(
+    Math.abs(
+      (await shell.locator(".inspector").boundingBox()).width - resizedWidth
+    ) <= 1
   )
   assert.ok(
     await shell.evaluate(
@@ -473,11 +551,13 @@ try {
   })
   await call("peck_window", { visible: true })
   const pickButton = shell.getByRole("button", {
-    name: "選取元件",
+    name: "Select element",
     exact: true,
   })
   await pickButton.click()
-  await shell.locator('[aria-label="選取元件"][aria-pressed="true"]').waitFor()
+  await shell
+    .locator('[aria-label="Select element"][aria-pressed="true"]')
+    .waitFor()
   const blocked = await client.callTool({
     name: "peck_click",
     arguments: { selector: "#add-idea" },
@@ -487,7 +567,9 @@ try {
       JSON.stringify(blocked.content).includes("selecting an element")
   )
   await pickButton.click()
-  await shell.locator('[aria-label="選取元件"][aria-pressed="false"]').waitFor()
+  await shell
+    .locator('[aria-label="Select element"][aria-pressed="false"]')
+    .waitFor()
   const reopenedWatch = call("peck_watch_annotations", {
     afterSequence: received.cursor,
     timeoutMs: 15000,
@@ -496,8 +578,8 @@ try {
     async () => parse(await call("peck_status")).mcp.waiters > 0,
     "reopened feedback watcher"
   )
-  await shell.getByRole("tab", { name: /^留言/ }).click()
-  await shell.getByText("重新開啟", { exact: true }).click()
+  await showPanel("Comments")
+  await shell.getByText("Reopen", { exact: true }).click()
   const reopened = parse(await reopenedWatch)
   assert.equal(reopened.annotations[0]?.id, item.id)
   assert.ok(reopened.cursor > received.cursor)
@@ -518,7 +600,7 @@ try {
     async () => (await windowCount()) === beforeTabs,
     "closed page window"
   )
-  await shell.getByRole("button", { name: "新增視窗", exact: true }).click()
+  await shell.getByRole("button", { name: "New window", exact: true }).click()
   const second = await waitFor(
     () =>
       Promise.resolve(
@@ -604,12 +686,18 @@ try {
     afterSequence: reopened.cursor,
     timeoutMs: 20000,
   })
-  await shell.getByRole("button", { name: "選取元件", exact: true }).click()
-  await shell.locator('[aria-label="選取元件"][aria-pressed="true"]').waitFor()
+  await shell
+    .getByRole("button", { name: "Select element", exact: true })
+    .click()
+  await shell
+    .locator('[aria-label="Select element"][aria-pressed="true"]')
+    .waitFor()
   await guest.locator("#title").click()
   await shell.getByText("Header · /src/App.jsx:11", { exact: true }).waitFor()
-  await shell.getByRole("textbox", { name: "修改意見" }).fill("標題放大。")
-  await shell.getByRole("button", { name: "送出留言", exact: true }).click()
+  await shell
+    .getByRole("textbox", { name: "Comment", exact: true })
+    .fill("標題放大。")
+  await shell.getByRole("button", { name: "Send", exact: true }).click()
   const fixtureItem = parse(await fixtureWatch).annotations.find(
     (a) => a.comment === "標題放大。"
   )
@@ -703,21 +791,27 @@ try {
       20000
     )
     assert.equal(linked.request.details.status, 500)
-    await shell.getByRole("tab", { name: /^Network/ }).click()
-    await shell.locator(".event", { hasText: "/api/fail" }).first().click()
+    await showPanel("Network")
+    await panel("Network")
+      .locator(".event", { hasText: "/api/fail" })
+      .first()
+      .click()
     await shell
       .locator(".server-records", { hasText: "workspace is locked" })
       .first()
       .waitFor()
-    await shell.getByRole("tab", { name: /^留言/ }).click()
     // A comment's frozen context carries the linked server records.
-    await shell.getByRole("button", { name: "選取元件", exact: true }).click()
     await shell
-      .locator('[aria-label="選取元件"][aria-pressed="true"]')
+      .getByRole("button", { name: "Select element", exact: true })
+      .click()
+    await shell
+      .locator('[aria-label="Select element"][aria-pressed="true"]')
       .waitFor()
     await guest.locator("#title").click()
-    await shell.getByRole("textbox", { name: "修改意見" }).fill("儲存會失敗。")
-    await shell.getByRole("button", { name: "送出留言", exact: true }).click()
+    await shell
+      .getByRole("textbox", { name: "Comment", exact: true })
+      .fill("儲存會失敗。")
+    await shell.getByRole("button", { name: "Send", exact: true }).click()
     const saved = await waitFor(
       async () =>
         parse(await call("peck_annotations")).find(
@@ -892,8 +986,10 @@ try {
         return { pid: Number(pid), cwd, args }
       })
   const addFeedback = async (text) => {
-    await shell.getByRole("tab", { name: /^留言/ }).click()
-    const reply = shell.getByRole("textbox", { name: "回覆留言" }).first()
+    await showPanel("Comments")
+    const reply = shell
+      .getByRole("textbox", { name: "Reply", exact: true })
+      .first()
     await reply.fill(text)
     await reply.press("Enter")
     await shell.getByText(text, { exact: true }).first().waitFor()
@@ -1091,9 +1187,16 @@ try {
     hasText: `Claude Code · ${claudeSession.slice(0, 8)}`,
   })
   await session.waitFor()
-  await session.getByRole("button", { name: "移除" }).click()
+  await session.getByRole("button", { name: "Remove" }).click()
   await session.waitFor({ state: "detached" })
   console.log("PASS: agent session registry persists and clears")
+  // The sidebar layout persists too.
+  assert.ok(
+    Math.abs(
+      (await shell.locator(".inspector").boundingBox()).width - resizedWidth
+    ) <= 1
+  )
+  console.log("PASS: sidebar layout persists")
 } finally {
   await restarted.close()
 }

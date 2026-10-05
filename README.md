@@ -14,10 +14,12 @@ then show the same live page when you want to review it. Your everyday browser
 stays separate. No model account or API key is required by Peck itself.
 
 Each page opens in its own window with one compact toolbar row: navigation,
-the page title (click it to edit the address), element selection, the
-inspector toggle, a new window button, and a menu for Local MCP, theme, and
-background mode. Closing a window closes its page. **移至背景** (Cmd+H) hides the
-window and keeps the page alive. The local MCP runs until you quit Peck.
+the page title (click it to edit the address), element selection, toggles for
+the Comments, Network, and Console panels, a new window button, and a menu for
+Local MCP and background mode. The panels stack in one sidebar; drag its edge
+or the dividers between panels to resize them. Closing a window closes its
+page. **Move to Background** (Cmd+H) hides the window and keeps the page alive.
+The local MCP runs until you quit Peck.
 
 ## Try the demo
 
@@ -25,9 +27,9 @@ Download the Apple Silicon app from [Releases](https://github.com/zyx1121/peck/r
 Open Peck and type your dev URL in the address field; new windows start empty.
 The demo is unsigned and not notarized.
 
-1. Click the pointer button (**選取元件**) or press **Cmd+Shift+C**, then click a
-   page element.
-2. Write a comment in the right panel and send it.
+1. Click the pointer button (**Select element**) or press **Cmd+Shift+C**, then
+   click a page element.
+2. Write a comment in the Comments panel and send it.
 3. Connect your agent through local MCP. Ask it to watch and process Peck feedback.
 4. Read its reply in the original comment. Reply again to queue another pass.
 
@@ -84,8 +86,8 @@ pending comments, so a conversation that stopped watching still notices them.
 Unprocessed feedback stays in SQLite for the next session.
 
 To have new feedback resume a stopped conversation, turn on
-**新留言時接回這個對話** for it under Local MCP. This is off by default, set per
-conversation, and not available for the home directory or the file system
+**Resume on new comments** for it under Local MCP. This is off by default, set
+per conversation, and not available for the home directory or the file system
 root. When you add a comment, reply, or reopen one, nothing is watching, and
 no agent runs in that conversation's directory, Peck runs the command shown
 under the checkbox there:
@@ -209,8 +211,8 @@ windows, the stdio bridge, and persistence across restart. Artifacts are written
   the selector. Canvas content can be selected only as a canvas element.
 - Up to eight page windows share one dedicated Peck profile. Windows are not
   restored after fully quitting. Comments are restored.
-- No automatic source edits, model runtime, closed-session wakeup, updater,
-  signed distribution, or macOS performance guarantees are included.
+- No automatic source edits, model runtime, updater, signed distribution, or
+  macOS performance guarantees are included.
 - WebSocket entries contain frame metadata, not message bodies. Backend logs
   require a separate integration. Browser permission requests are denied in
   the demo, including camera, microphone, and location.
@@ -220,8 +222,9 @@ windows, the stdio bridge, and persistence across restart. Artifacts are written
 ## Contributing
 
 Issues and PRs are welcome. Follow [CONTRIBUTING.md](https://github.com/zyx1121/.github/blob/main/CONTRIBUTING.md).
-The UI uses the [ui.zyx.tw](https://ui.zyx.tw) theme in a full-window desktop
-browser layout: one compact toolbar per page window and an inspector.
+The UI uses the [ui.zyx.tw](https://ui.zyx.tw) theme, dark only, in a
+full-window desktop browser layout: one compact toolbar per page window and a
+sidebar of three resizable panels.
 
 ## License
 

@@ -430,7 +430,7 @@ async function boot() {
           return store.update(
             z.string().parse(args.id),
             "pending",
-            "重新開啟，請再檢查。",
+            "Reopened. Please check again.",
             "user"
           )
         case "auto-resume": {
@@ -464,20 +464,19 @@ async function boot() {
         case "menu":
           Menu.buildFromTemplate([
             {
-              label: "新增視窗",
+              label: "New Window",
               accelerator: "CmdOrCtrl+N",
               click: openWindow,
             },
             { label: "Local MCP…", click: () => command(session, "connect") },
-            { label: "切換深淺色", click: () => command(session, "theme") },
             { type: "separator" },
             {
-              label: "移至背景",
+              label: "Move to Background",
               accelerator: "CmdOrCtrl+H",
               click: () => void visibility(false, id),
             },
             {
-              label: "關閉視窗",
+              label: "Close Window",
               accelerator: "CmdOrCtrl+W",
               click: () => window.close(),
             },
@@ -531,58 +530,58 @@ async function boot() {
             click: withFocused((s) => command(s, "connect")),
           },
           { type: "separator" },
-          { label: "顯示視窗", click: () => void visibility(true) },
+          { label: "Show Window", click: () => void visibility(true) },
           {
-            label: "移至背景",
+            label: "Move to Background",
             accelerator: "CmdOrCtrl+H",
             click: () => void visibility(false),
           },
           { type: "separator" },
-          { role: "quit", label: "結束 Peck" },
+          { role: "quit", label: "Quit Peck" },
         ],
       },
       {
-        label: "檔案",
+        label: "File",
         submenu: [
           {
-            label: "新增視窗",
+            label: "New Window",
             accelerator: "CmdOrCtrl+N",
             click: openWindow,
           },
           {
-            label: "關閉視窗",
+            label: "Close Window",
             accelerator: "CmdOrCtrl+W",
             click: withFocused((s) => s.window.close()),
           },
         ],
       },
-      { role: "editMenu", label: "編輯" },
+      { role: "editMenu" },
       {
-        label: "瀏覽",
+        label: "View",
         submenu: [
           {
-            label: "輸入網址",
+            label: "Open Location…",
             accelerator: "CmdOrCtrl+L",
             click: withFocused((s) => command(s, "address")),
           },
           {
-            label: "選取元件",
+            label: "Select Element",
             accelerator: "CmdOrCtrl+Shift+C",
             click: withFocused(togglePicker),
           },
           { type: "separator" },
           {
-            label: "上一頁",
+            label: "Back",
             accelerator: "CmdOrCtrl+[",
             click: history("goBack"),
           },
           {
-            label: "下一頁",
+            label: "Forward",
             accelerator: "CmdOrCtrl+]",
             click: history("goForward"),
           },
           {
-            label: "重新整理",
+            label: "Reload",
             accelerator: "CmdOrCtrl+R",
             click: withFocused((s) =>
               browser.current(s.id).view.webContents.reload()
@@ -590,7 +589,7 @@ async function boot() {
           },
         ],
       },
-      { role: "windowMenu", label: "視窗" },
+      { role: "windowMenu" },
     ])
   )
   await browser.create()
