@@ -42,6 +42,9 @@ export class Browser extends EventEmitter {
       activity: Activity
       // Marks the first real navigation of a window, see create().
       begin: () => void
+      // Settles when the window's capture is set up. A navigation during
+      // setup can swap the page's process and fail a pending CDP command.
+      ready: Promise<void>
     }
   >()
   activeId = ""
@@ -164,12 +167,13 @@ export class Browser extends EventEmitter {
     // The internal about:blank document stays out of the UI and history,
     // and its white page stays hidden until the first navigation.
     let phase: "blank" | "first" | "ready" = "blank"
-    view.setVisible(false)
     const begin = () => {
       if (phase === "blank") phase = "first"
       view.setVisible(true)
     }
-    this.tabs.set(id, { info, view, window, activity, begin })
+    let settle = () => {}
+    const ready = new Promise<void>((resolve) => (settle = resolve))
+    this.tabs.set(id, { info, view, window, activity, begin, ready })
     window.contentView.addChildView(view)
     window.on("focus", () => {
       this.activeId = id
@@ -449,6 +453,10 @@ export class Browser extends EventEmitter {
         maxResourceBufferSize: 65536,
       })
       await contents.debugger.sendCommand("Runtime.enable")
+      // Hide the blank page only after setup. Hidden from the start, setup on
+      // macOS was sometimes still pending when the first navigation arrived.
+      if (!target) view.setVisible(false)
+      settle()
       if (!this.activeId || visible) this.activeId = id
       if (visible && focus) window.show()
       else if (visible) window.showInactive()
@@ -463,6 +471,7 @@ export class Browser extends EventEmitter {
       }
       return info
     } catch (error) {
+      settle()
       // The user may close a window before it finishes opening.
       if (!window.isDestroyed()) window.destroy()
       throw error
@@ -497,7 +506,8 @@ export class Browser extends EventEmitter {
   async navigate(url: string, id = this.activeId) {
     const tab = this.current(id)
     tab.activity.actedAt = Date.now()
-    tab.begin()
+    await tab.ready
+    this.current(id).begin()
     await tab.view.webContents.loadURL(webUrl(url))
     return this.current(id).info
   }
