@@ -307,194 +307,203 @@ export default function App() {
               aria-label="專案網頁"
             />
             <aside
-              className="inspector"
+              className={`inspector ${inspectorOpen ? "" : "closed"}`}
               aria-label="檢查與回饋"
-              hidden={!inspectorOpen}
+              aria-hidden={!inspectorOpen}
+              inert={!inspectorOpen}
             >
-              <div className="panel-tabs" role="tablist" aria-label="檢查面板">
-                {(
-                  [
-                    ["comments", "留言", pending],
+              <div className="inspector-body">
+                <div
+                  className="panel-tabs"
+                  role="tablist"
+                  aria-label="檢查面板"
+                >
+                  {(
                     [
-                      "console",
-                      "Console",
-                      consoleEvents.filter((e) => e.level === "error").length,
-                    ],
-                    ["network", "Network", networkEvents.length],
-                  ] as const
-                ).map(([id, label, count]) => (
-                  <button
-                    role="tab"
-                    aria-selected={panel === id}
-                    key={id}
-                    onClick={() => setPanel(id)}
-                  >
-                    {label}
-                    {count > 0 && <span>{count}</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="panel-body" role="tabpanel">
-                {panel === "comments" && (
-                  <>
-                    {state.selection ? (
-                      <form className="composer" onSubmit={submit}>
-                        <div className="flex items-center justify-between">
-                          <span className="eyebrow">已選取元件</span>
+                      ["comments", "留言", pending],
+                      [
+                        "console",
+                        "Console",
+                        consoleEvents.filter((e) => e.level === "error").length,
+                      ],
+                      ["network", "Network", networkEvents.length],
+                    ] as const
+                  ).map(([id, label, count]) => (
+                    <button
+                      role="tab"
+                      aria-selected={panel === id}
+                      key={id}
+                      onClick={() => setPanel(id)}
+                    >
+                      {label}
+                      {count > 0 && <span>{count}</span>}
+                    </button>
+                  ))}
+                </div>
+                <div className="panel-body" role="tabpanel">
+                  {panel === "comments" && (
+                    <>
+                      {state.selection ? (
+                        <form className="composer" onSubmit={submit}>
+                          <div className="flex items-center justify-between">
+                            <span className="eyebrow">已選取元件</span>
+                            <IconButton
+                              label="取消選取"
+                              onClick={() => void call("clear-selection")}
+                            >
+                              <X />
+                            </IconButton>
+                          </div>
+                          <code className="selector">
+                            {state.selection.selector}
+                          </code>
+                          {state.selection.location && (
+                            <code className="source-location">
+                              {where(state.selection.location)}
+                            </code>
+                          )}
+                          <p className="selected-text">
+                            {state.selection.text.slice(0, 140) ||
+                              `<${state.selection.tag}>`}
+                          </p>
+                          <Textarea
+                            ref={textarea}
+                            aria-label="修改意見"
+                            placeholder="修改意見"
+                            rows={4}
+                            value={comment}
+                            onChange={(event) => setComment(event.target.value)}
+                            maxLength={4000}
+                          />
+                          <div className="composer-footer">
+                            <Button
+                              className="h-9"
+                              type="submit"
+                              disabled={busy || !comment.trim()}
+                            >
+                              <Send />
+                              送出留言
+                            </Button>
+                          </div>
+                        </form>
+                      ) : null}
+                      {(annotations.length > 0 || waiting) && (
+                        <div className="section-label">
+                          <span>
+                            {annotations.length > 0 &&
+                              `${annotations.length} 則留言`}
+                          </span>
+                          <span>{waiting && "Agent 等待中"}</span>
+                        </div>
+                      )}
+                      {annotations.map((item) => (
+                        <CommentCard key={item.id} item={item} call={call} />
+                      ))}
+                    </>
+                  )}
+                  {(panel === "console" || panel === "network") && (
+                    <EventList
+                      kind={panel}
+                      events={
+                        panel === "console" ? consoleEvents : networkEvents
+                      }
+                      server={events.filter((e) => e.kind === "server")}
+                    />
+                  )}
+                  {panel === "connect" && (
+                    <div className="connect">
+                      <div className="section-label">Local MCP</div>
+                      <code>{state.mcp.url}</code>
+                      <Button
+                        className="mt-5 h-9"
+                        onClick={async () => {
+                          const copied = await call("copy-config")
+                          if (copied) showNotice("已複製 MCP 設定")
+                        }}
+                      >
+                        <Copy />
+                        複製 MCP 設定
+                      </Button>
+                      <div className="connection-state">
+                        <Circle
+                          className="size-3"
+                          fill={waiting ? "currentColor" : "none"}
+                        />
+                        <span>
+                          {waiting
+                            ? "Agent 正在等待新留言"
+                            : state.mcp.clients
+                              ? "已收到 agent 呼叫"
+                              : "等待 agent 連線"}
+                        </span>
+                      </div>
+                      {state.agents.map((a) => (
+                        <div className="agent-session" key={a.sessionId}>
+                          <div>
+                            <p>
+                              {agentNames[a.agent] ?? a.agent} ·{" "}
+                              {a.sessionId.slice(0, 8)}
+                            </p>
+                            <span>{a.cwd}</span>
+                            <span>
+                              {a.watching
+                                ? "等待留言中"
+                                : a.running
+                                  ? "執行中"
+                                  : "已結束"}{" "}
+                              · {time(a.lastSeen)}
+                            </span>
+                            {a.command && (
+                              <label className="auto-resume">
+                                <input
+                                  type="checkbox"
+                                  checked={!!a.autoResume}
+                                  onChange={(event) =>
+                                    void call("auto-resume", {
+                                      sessionId: a.sessionId,
+                                      enabled: event.target.checked,
+                                    })
+                                  }
+                                />
+                                新留言時接回這個對話
+                              </label>
+                            )}
+                            {a.autoResume && a.command && (
+                              <code className="agent-command">{a.command}</code>
+                            )}
+                            {a.lastRun && (
+                              <span>
+                                上次接回 · {time(a.lastRun.at)} ·{" "}
+                                {a.lastRun.running
+                                  ? "執行中"
+                                  : a.lastRun.exitCode === 0
+                                    ? "完成"
+                                    : "失敗"}
+                              </span>
+                            )}
+                          </div>
                           <IconButton
-                            label="取消選取"
-                            onClick={() => void call("clear-selection")}
+                            label="移除"
+                            onClick={() =>
+                              void call("forget-agent", {
+                                sessionId: a.sessionId,
+                              })
+                            }
                           >
                             <X />
                           </IconButton>
                         </div>
-                        <code className="selector">
-                          {state.selection.selector}
-                        </code>
-                        {state.selection.location && (
-                          <code className="source-location">
-                            {where(state.selection.location)}
-                          </code>
-                        )}
-                        <p className="selected-text">
-                          {state.selection.text.slice(0, 140) ||
-                            `<${state.selection.tag}>`}
-                        </p>
-                        <Textarea
-                          ref={textarea}
-                          aria-label="修改意見"
-                          placeholder="修改意見"
-                          rows={4}
-                          value={comment}
-                          onChange={(event) => setComment(event.target.value)}
-                          maxLength={4000}
-                        />
-                        <div className="composer-footer">
-                          <Button
-                            className="h-9"
-                            type="submit"
-                            disabled={busy || !comment.trim()}
-                          >
-                            <Send />
-                            送出留言
-                          </Button>
-                        </div>
-                      </form>
-                    ) : null}
-                    {(annotations.length > 0 || waiting) && (
-                      <div className="section-label">
-                        <span>
-                          {annotations.length > 0 &&
-                            `${annotations.length} 則留言`}
-                        </span>
-                        <span>{waiting && "Agent 等待中"}</span>
-                      </div>
-                    )}
-                    {annotations.map((item) => (
-                      <CommentCard key={item.id} item={item} call={call} />
-                    ))}
-                  </>
-                )}
-                {(panel === "console" || panel === "network") && (
-                  <EventList
-                    kind={panel}
-                    events={panel === "console" ? consoleEvents : networkEvents}
-                    server={events.filter((e) => e.kind === "server")}
-                  />
-                )}
-                {panel === "connect" && (
-                  <div className="connect">
-                    <div className="section-label">Local MCP</div>
-                    <code>{state.mcp.url}</code>
-                    <Button
-                      className="mt-5 h-9"
-                      onClick={async () => {
-                        const copied = await call("copy-config")
-                        if (copied) showNotice("已複製 MCP 設定")
-                      }}
-                    >
-                      <Copy />
-                      複製 MCP 設定
-                    </Button>
-                    <div className="connection-state">
-                      <Circle
-                        className="size-3"
-                        fill={waiting ? "currentColor" : "none"}
-                      />
-                      <span>
-                        {waiting
-                          ? "Agent 正在等待新留言"
-                          : state.mcp.clients
-                            ? "已收到 agent 呼叫"
-                            : "等待 agent 連線"}
-                      </span>
+                      ))}
+                      <a
+                        href="https://github.com/zyx1121/peck"
+                        className="inline-flex items-center gap-2 text-sm"
+                      >
+                        設定說明
+                        <ExternalLink className="size-4" />
+                      </a>
                     </div>
-                    {state.agents.map((a) => (
-                      <div className="agent-session" key={a.sessionId}>
-                        <div>
-                          <p>
-                            {agentNames[a.agent] ?? a.agent} ·{" "}
-                            {a.sessionId.slice(0, 8)}
-                          </p>
-                          <span>{a.cwd}</span>
-                          <span>
-                            {a.watching
-                              ? "等待留言中"
-                              : a.running
-                                ? "執行中"
-                                : "已結束"}{" "}
-                            · {time(a.lastSeen)}
-                          </span>
-                          {a.command && (
-                            <label className="auto-resume">
-                              <input
-                                type="checkbox"
-                                checked={!!a.autoResume}
-                                onChange={(event) =>
-                                  void call("auto-resume", {
-                                    sessionId: a.sessionId,
-                                    enabled: event.target.checked,
-                                  })
-                                }
-                              />
-                              新留言時接回這個對話
-                            </label>
-                          )}
-                          {a.autoResume && a.command && (
-                            <code className="agent-command">{a.command}</code>
-                          )}
-                          {a.lastRun && (
-                            <span>
-                              上次接回 · {time(a.lastRun.at)} ·{" "}
-                              {a.lastRun.running
-                                ? "執行中"
-                                : a.lastRun.exitCode === 0
-                                  ? "完成"
-                                  : "失敗"}
-                            </span>
-                          )}
-                        </div>
-                        <IconButton
-                          label="移除"
-                          onClick={() =>
-                            void call("forget-agent", {
-                              sessionId: a.sessionId,
-                            })
-                          }
-                        >
-                          <X />
-                        </IconButton>
-                      </div>
-                    ))}
-                    <a
-                      href="https://github.com/zyx1121/peck"
-                      className="inline-flex items-center gap-2 text-sm"
-                    >
-                      設定說明
-                      <ExternalLink className="size-4" />
-                    </a>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </aside>
           </div>
