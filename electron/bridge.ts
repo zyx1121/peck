@@ -14,6 +14,16 @@ import {
 
 const VERSION = "0.1.0-demo.13"
 const LAUNCH_TIMEOUT_MS = 30000
+// Peck starts with the user's basic environment, not the agent's: no
+// ELECTRON_RUN_AS_NODE (it would start as Node.js and exit), session ids,
+// or the agent's telemetry settings.
+const APP_ENV =
+  /^(HOME|USER|LOGNAME|SHELL|PATH|TMPDIR|TEMP|TMP|LANG|LC_\w+|TZ|DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_\w+|DBUS_SESSION_BUS_ADDRESS|SYSTEMROOT|WINDIR|APPDATA|LOCALAPPDATA|USERPROFILE|COMSPEC|PATHEXT|PECK_\w+)$/i
+function appEnv() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => APP_ENV.test(key))
+  )
+}
 interface Connection {
   url: string
   token: string
@@ -62,11 +72,10 @@ async function main() {
     }
   }
   // Open Peck in the background and wait for its MCP. On macOS the packaged
-  // app opens through LaunchServices, so it neither takes focus nor inherits
-  // the agent's environment. "-n" starts it even when LaunchServices still
-  // lists a closed instance, which would drop PECK_DATA_DIR; a second Peck on
-  // the same data quits on its single-instance lock. Arguments after the
-  // bridge path go to Peck.
+  // app opens through LaunchServices without taking focus; open passes its
+  // own environment on. "-n" starts it even when LaunchServices still lists a
+  // closed instance; a second Peck on the same data quits on its
+  // single-instance lock. Arguments after the bridge path go to Peck.
   let launching: Promise<Connection> | undefined
   function launch() {
     // Plain Node.js cannot start the app.
@@ -82,31 +91,20 @@ async function main() {
       if (process.platform === "darwin" && bundle && packaged) {
         const opener = spawn(
           "/usr/bin/open",
-          [
-            "-g",
-            "-n",
-            ...(process.env.PECK_DATA_DIR
-              ? ["--env", `PECK_DATA_DIR=${process.env.PECK_DATA_DIR}`]
-              : []),
-            bundle,
-            ...(extra.length ? ["--args", ...extra] : []),
-          ],
-          { stdio: ["ignore", "pipe", "pipe"] }
+          ["-g", "-n", bundle, ...(extra.length ? ["--args", ...extra] : [])],
+          { stdio: ["ignore", "pipe", "pipe"], env: appEnv() }
         )
         opener.stdout?.on("data", (data) => (failure += String(data)))
         opener.stderr?.on("data", (data) => (failure += String(data)))
         opener.on("error", (error) => (failure += String(error)))
-      } else {
-        const env = { ...process.env }
-        delete env.ELECTRON_RUN_AS_NODE
+      } else
         spawn(
           process.execPath,
           [...(packaged ? [] : [join(__dirname, "..")]), ...extra],
-          { detached: true, stdio: "ignore", env }
+          { detached: true, stdio: "ignore", env: appEnv() }
         )
           .on("error", (error) => (failure += String(error)))
           .unref()
-      }
       const deadline = Date.now() + LAUNCH_TIMEOUT_MS
       while (Date.now() < deadline) {
         const config = running()
