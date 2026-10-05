@@ -1193,7 +1193,27 @@ await lazy.connect(
 try {
   assert.equal((await lazy.listTools()).tools.length, 18)
   assert.equal(existsSync(connectionFile), false, "Listing tools opened Peck")
-  const launched = await lazy.callTool({ name: "peck_status", arguments: {} })
+  const launched = await lazy
+    .callTool({ name: "peck_status", arguments: {} })
+    .catch(async (error) => {
+      // Show whether Peck started, and where it wrote its connection file.
+      const { execFileSync } = await import("node:child_process")
+      console.error(
+        execFileSync("ps", ["-axo", "pid,command"], { encoding: "utf8" })
+          .split("\n")
+          .filter((line) => /Peck/.test(line) && !/Helper/.test(line))
+          .join("\n")
+      )
+      console.error(
+        "default connection file:",
+        existsSync(
+          process.platform === "darwin"
+            ? `${homedir()}/Library/Application Support/Peck/connection.json`
+            : `${homedir()}/.config/Peck/connection.json`
+        )
+      )
+      throw error
+    })
   assert.ok(!launched.isError, JSON.stringify(launched.content))
 } finally {
   await lazy.close()

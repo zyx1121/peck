@@ -91,8 +91,9 @@ async function main() {
             bundle,
             ...(extra.length ? ["--args", ...extra] : []),
           ],
-          { stdio: ["ignore", "ignore", "pipe"] }
+          { stdio: ["ignore", "pipe", "pipe"] }
         )
+        opener.stdout?.on("data", (data) => (failure += String(data)))
         opener.stderr?.on("data", (data) => (failure += String(data)))
         opener.on("error", (error) => (failure += String(error)))
       } else {
