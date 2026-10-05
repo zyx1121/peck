@@ -10,7 +10,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 import { Browser } from "./browser"
 import { Store } from "./store"
-import { demoPage } from "./demo"
 import { telemetry } from "./telemetry"
 import type { WaitCondition } from "./wait"
 import type { AgentSession, Annotation } from "../src/shared"
@@ -627,27 +626,6 @@ export async function onRequestError(...args: unknown[]) {
     }
     res.setHeader("X-Content-Type-Options", "nosniff")
     const path = (req.url ?? "").split("?")[0]
-    if (req.method === "GET" && path === "/demo") {
-      res
-        .writeHead(200, {
-          "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-store",
-          "Content-Security-Policy":
-            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
-        })
-        .end(demoPage)
-      return
-    }
-    if (req.method === "POST" && path === "/demo/api/save") {
-      req.resume()
-      res.writeHead(422, { "Content-Type": "application/json" }).end(
-        JSON.stringify({
-          message: "Demo validation error: workspace name is unavailable",
-          code: "DEMO_VALIDATION",
-        })
-      )
-      return
-    }
     if (path !== "/mcp") {
       res.writeHead(404).end("Not found")
       return
@@ -709,7 +687,6 @@ export async function onRequestError(...args: unknown[]) {
     status,
     watching,
     token,
-    demoUrl: `http://127.0.0.1:${address.port}/demo`,
     close: () => {
       for (const server of servers) void server.close()
       http.closeAllConnections()

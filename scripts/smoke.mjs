@@ -5,7 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import assert from "node:assert/strict"
 import { resolve } from "node:path"
-import { request } from "node:http"
+import { request, createServer as createHttpServer } from "node:http"
 import { createServer } from "node:net"
 import { spawn } from "node:child_process"
 import { homedir } from "node:os"
@@ -34,6 +34,32 @@ const launchOptions = {
   timeout: 30000,
 }
 await mkdir(output, { recursive: true })
+// The page the test drives, served here: Peck ships no example page.
+const playgroundPage = await readFile(
+  resolve("fixtures/playground/index.html"),
+  "utf8"
+)
+const playground = createHttpServer((req, res) => {
+  const path = (req.url ?? "").split("?")[0]
+  if (req.method === "GET" && path === "/demo")
+    res
+      .writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      })
+      .end(playgroundPage)
+  else if (req.method === "POST" && path === "/demo/api/save") {
+    req.resume()
+    res.writeHead(422, { "content-type": "application/json" }).end(
+      JSON.stringify({
+        message: "Demo validation error: workspace name is unavailable",
+        code: "DEMO_VALIDATION",
+      })
+    )
+  } else res.writeHead(404).end()
+})
+await new Promise((done) => playground.listen(0, "127.0.0.1", done))
+const playgroundUrl = `http://127.0.0.1:${playground.address().port}/demo`
 await rm(dataPath, { recursive: true, force: true })
 await rm(resolve("output/fake-agents"), { recursive: true, force: true })
 await mkdir(resolve("output/fake-agents"), { recursive: true })
@@ -108,10 +134,31 @@ try {
   console.log("Electron launched; waiting for shell")
   const shell = await shellOf(app)
   await shell.waitForSelector(".workspace", { timeout: 30000 })
-  console.log("Shell loaded; waiting for guest")
+  // A new window opens empty, with the address field ready for a URL.
+  await waitFor(
+    () =>
+      shell.evaluate(
+        () =>
+          document.activeElement?.getAttribute("aria-label") === "網址" &&
+          document.activeElement.value === ""
+      ),
+    "focused empty address field"
+  )
+  const config = JSON.parse(
+    await readFile(`${dataPath}/connection.json`, "utf8")
+  )
+  client = new Client({ name: "peck-smoke", version: "1.0.0" })
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(config.url), {
+      requestInit: { headers: { Authorization: `Bearer ${config.token}` } },
+    })
+  )
+  assert.equal(parse(await call("peck_status")).tabs[0].url, "")
+  console.log("Shell loaded; opening the playground")
+  await call("peck_navigate", { url: playgroundUrl })
   const guest = await waitFor(
     () => Promise.resolve(app.windows().find((p) => p.url().endsWith("/demo"))),
-    "demo page"
+    "playground page"
   )
   await guest.locator("#headline").waitFor()
   const coldStartMs = Date.now() - started
@@ -124,6 +171,8 @@ try {
   assert.equal((await shell.locator(".address-bar").boundingBox()).y, 0)
   assert.equal((await shell.locator(".page-viewport").boundingBox()).y, 56)
   const address = shell.getByRole("textbox", { name: "網址" })
+  // The empty window focused the field; leave it to see the page title.
+  await address.press("Escape")
   await waitFor(
     async () => (await address.inputValue()) === "Peck Playground",
     "page title in the address field"
@@ -145,15 +194,6 @@ try {
   )
   await shell.getByRole("button", { name: "顯示檢查面板" }).click()
   await shell.locator(".inspector").waitFor()
-  const config = JSON.parse(
-    await readFile(`${dataPath}/connection.json`, "utf8")
-  )
-  client = new Client({ name: "peck-smoke", version: "1.0.0" })
-  await client.connect(
-    new StreamableHTTPClientTransport(new URL(config.url), {
-      requestInit: { headers: { Authorization: `Bearer ${config.token}` } },
-    })
-  )
   const tools = await client.listTools()
   assert.equal(tools.tools.length, 18)
   // A new window starts its history at the requested page.
@@ -252,7 +292,7 @@ try {
   const item = received.annotations[0]
   assert.equal(item.element.selector, "#headline")
   assert.deepEqual(item.element.location, {
-    file: "electron/demo.ts",
+    file: "fixtures/playground/index.html",
     via: "attribute",
   })
   assert.equal(item.comment, "把標題改成中文，字小一點。")
@@ -420,7 +460,7 @@ try {
   const background = parse(
     await call("peck_tabs", {
       action: "open",
-      url: config.url.replace("/mcp", "/demo"),
+      url: playgroundUrl,
     })
   ).at(-1)
   assert.equal(background.visible, false)
@@ -468,7 +508,7 @@ try {
   const beforeTabs = parse(await call("peck_tabs")).length
   await call("peck_tabs", {
     action: "open",
-    url: config.url.replace("/mcp", "/demo"),
+    url: playgroundUrl,
   })
   const afterTabs = parse(await call("peck_tabs"))
   assert.equal(afterTabs.length, beforeTabs + 1)
@@ -498,8 +538,7 @@ try {
   )
   // Waiting: navigation after history.back(), text and selector after a
   // click, network idle, and a clear timeout.
-  const demoUrl = config.url.replace("/mcp", "/demo")
-  await call("peck_navigate", { url: `${demoUrl}?second` })
+  await call("peck_navigate", { url: `${playgroundUrl}?second` })
   await call("peck_wait", { until: "url", value: "?second" })
   await call("peck_evaluate", { expression: "history.back(); true" })
   const back = parse(await call("peck_wait", { until: "navigation" }))
@@ -1024,6 +1063,7 @@ try {
   )
 } finally {
   vite?.kill()
+  playground.close()
   await bridge?.close()
   await client?.close()
   await app.close()

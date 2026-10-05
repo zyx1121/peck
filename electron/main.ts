@@ -128,7 +128,7 @@ async function boot() {
   // Show or hide one page window. Showing with no windows left opens one.
   async function visibility(visible: boolean, id = browser.activeId) {
     if (!id) {
-      if (visible) await browser.create(mcp.demoUrl)
+      if (visible) await browser.create()
       return
     }
     if (visible) browser.activate(id)
@@ -199,7 +199,7 @@ async function boot() {
     push()
   }
   function openWindow() {
-    void browser.create(mcp.demoUrl).catch((error) => {
+    void browser.create().catch((error) => {
       const session = sessions.get(browser.activeId)
       if (session) command(session, `error:${String(error)}`)
     })
@@ -359,7 +359,7 @@ async function boot() {
           return loading
         }
         case "new-window":
-          return browser.create(mcp.demoUrl)
+          return browser.create()
         case "back":
           if (contents.navigationHistory.canGoBack())
             contents.navigationHistory.goBack()
@@ -593,7 +593,7 @@ async function boot() {
       { role: "windowMenu", label: "視窗" },
     ])
   )
-  await browser.create(mcp.demoUrl)
+  await browser.create()
   telemetry("app.started", {
     version: app.getVersion(),
     platform: process.platform,

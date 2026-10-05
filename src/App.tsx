@@ -150,6 +150,14 @@ export default function App() {
         showNotice(command.slice(6).replace(/^Error: /, ""))
     })
   }, [toggle, showNotice])
+  // An empty window is ready for a URL.
+  const focusedEmpty = useRef(false)
+  useEffect(() => {
+    if (state?.page.url === "" && !focusedEmpty.current) {
+      focusedEmpty.current = true
+      address.current?.focus()
+    }
+  }, [state?.page.url])
   const ready = !!state
   useEffect(() => {
     if (!ready || !viewport.current) return
@@ -258,6 +266,7 @@ export default function App() {
                     address.current?.blur()
                   }
                 }}
+                placeholder="輸入網址"
                 spellCheck={false}
                 autoComplete="off"
               />
