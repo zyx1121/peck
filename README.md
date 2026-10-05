@@ -38,6 +38,8 @@ The demo is unsigned and not notarized.
 Peck includes an authenticated loopback HTTP MCP server and a stdio bridge.
 The bridge discovers the running app's port and token from its local connection
 file. You do not need a separate Node.js installation or a second browser.
+When Peck is closed, the first Peck tool call opens it in the background and
+then runs; starting an agent session or listing tools leaves it closed.
 
 Choose **Local MCP…** from the toolbar menu or the Peck menu, then copy the
 client configuration. For an app at

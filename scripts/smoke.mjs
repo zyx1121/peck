@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
+import { existsSync } from "node:fs"
 import assert from "node:assert/strict"
 import { resolve } from "node:path"
 import { request, createServer as createHttpServer } from "node:http"
@@ -1174,6 +1175,64 @@ await waitFor(() => {
   }
 }, "stopped agent after quitting Peck")
 await rm(`${resolve("output/fake-agents/calls.txt")}.sleep`, { force: true })
+// With Peck closed, the bridge lists tools from its last list without
+// opening Peck. The first tool call opens Peck, connects, and runs.
+const connectionFile = `${dataPath}/connection.json`
+assert.equal(existsSync(connectionFile), false)
+const lazy = new Client({ name: "bridge-launch", version: "1.0.0" })
+await lazy.connect(
+  new StdioClientTransport({
+    command: executablePath ?? (await import("electron")).default,
+    args: [
+      resolve(process.env.PECK_BRIDGE_PATH ?? "dist-electron/bridge.cjs"),
+      ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+    ],
+    env: { ...process.env, PECK_DATA_DIR: dataPath, ELECTRON_RUN_AS_NODE: "1" },
+  })
+)
+try {
+  assert.equal((await lazy.listTools()).tools.length, 18)
+  assert.equal(existsSync(connectionFile), false, "Listing tools opened Peck")
+  const launched = await lazy
+    .callTool({ name: "peck_status", arguments: {} })
+    .catch(async (error) => {
+      // Show whether Peck started, and where it wrote its connection file.
+      const { execFileSync } = await import("node:child_process")
+      console.error(
+        execFileSync("ps", ["-axo", "pid,command"], { encoding: "utf8" })
+          .split("\n")
+          .filter((line) => /Peck/.test(line) && !/Helper/.test(line))
+          .join("\n")
+      )
+      console.error(
+        "default connection file:",
+        existsSync(
+          process.platform === "darwin"
+            ? `${homedir()}/Library/Application Support/Peck/connection.json`
+            : `${homedir()}/.config/Peck/connection.json`
+        )
+      )
+      throw error
+    })
+  assert.ok(!launched.isError, JSON.stringify(launched.content))
+} finally {
+  await lazy.close()
+}
+const { pid: launchedPid } = JSON.parse(await readFile(connectionFile, "utf8"))
+process.kill(launchedPid, "SIGTERM")
+await waitFor(
+  () => {
+    try {
+      process.kill(launchedPid, 0)
+      return false
+    } catch {
+      return true
+    }
+  },
+  "Peck opened by the bridge to quit",
+  20000
+)
+console.log("PASS: bridge opens Peck on the first tool call")
 const restarted = await electron.launch(launchOptions)
 try {
   const shell = await shellOf(restarted)
