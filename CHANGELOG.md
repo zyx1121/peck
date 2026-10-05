@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/zyx1121/peck/compare/v0.1.0...v0.2.0) (2026-10-05)
+
+
+### Features
+
+* sign in with passkeys using Touch ID ([#59](https://github.com/zyx1121/peck/issues/59)) ([97a722a](https://github.com/zyx1121/peck/commit/97a722a2b394be94af532aa369c43a33476d69de))
+
+
+### Bug fixes
+
+* write the connection file after the first window opens ([#64](https://github.com/zyx1121/peck/issues/64)) ([9f7f101](https://github.com/zyx1121/peck/commit/9f7f10128b8b29ce5b8d5c9f2075d8cd02e8dfca)), closes [#63](https://github.com/zyx1121/peck/issues/63)
+
 ## [0.1.0](https://github.com/zyx1121/peck/compare/v0.1.0-demo.14...v0.1.0) (2026-10-05)
 
 
