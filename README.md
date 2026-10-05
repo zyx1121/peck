@@ -22,7 +22,7 @@ window and keeps the page alive. The local MCP runs until you quit Peck.
 ## Try the demo
 
 Download the Apple Silicon app from [Releases](https://github.com/zyx1121/peck/releases).
-Open Peck, then use the built-in Fieldnotes playground or enter your own dev URL.
+Open Peck and type your dev URL in the address field; new windows start empty.
 The demo is unsigned and not notarized.
 
 1. Click the pointer button (**選取元件**) or press **Cmd+Shift+C**, then click a
@@ -30,10 +30,6 @@ The demo is unsigned and not notarized.
 2. Write a comment in the right panel and send it.
 3. Connect your agent through local MCP. Ask it to watch and process Peck feedback.
 4. Read its reply in the original comment. Reply again to queue another pass.
-
-The playground's save button deliberately returns HTTP 422. Use it to inspect
-real request and response details in Network and an error in Console.
-The playground does not run a simulated agent or automatically pretend to fix code.
 
 ## Connect your existing agent
 

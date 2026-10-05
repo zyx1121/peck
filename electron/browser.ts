@@ -40,6 +40,8 @@ export class Browser extends EventEmitter {
       view: WebContentsView
       window: BrowserWindow
       activity: Activity
+      // Marks the first real navigation of a window, see create().
+      begin: () => void
     }
   >()
   activeId = ""
@@ -96,10 +98,11 @@ export class Browser extends EventEmitter {
       visible: t.window.isVisible(),
     }))
   }
-  async create(url: string, visible = true) {
+  // Without a URL the window opens empty, for the user to type one.
+  async create(url?: string, visible = true) {
     if (this.tabs.size >= 8)
       throw new Error("The demo supports up to 8 windows")
-    const target = webUrl(url)
+    const target = url === undefined ? undefined : webUrl(url)
     const id = randomUUID()
     // Cascade from the active window, like a new Safari window.
     const anchor = this.tabs.get(this.activeId)?.window
@@ -147,7 +150,7 @@ export class Browser extends EventEmitter {
     const info: TabInfo = {
       id,
       title: "",
-      url: target,
+      url: target ?? "",
       loading: true,
       canGoBack: false,
       canGoForward: false,
@@ -158,7 +161,12 @@ export class Browser extends EventEmitter {
       navigatedAt: 0,
       actedAt: 0,
     }
-    this.tabs.set(id, { info, view, window, activity })
+    // The internal about:blank document stays out of the UI and history.
+    let phase: "blank" | "first" | "ready" = "blank"
+    const begin = () => {
+      if (phase === "blank") phase = "first"
+    }
+    this.tabs.set(id, { info, view, window, activity, begin })
     window.contentView.addChildView(view)
     window.on("focus", () => {
       this.activeId = id
@@ -206,12 +214,11 @@ export class Browser extends EventEmitter {
       }
     })
     contents.on("page-title-updated", (_, title) => {
+      if (phase === "blank") return
       info.title = title
       setTitle(title)
       this.emit("change")
     })
-    // The internal about:blank document stays out of the UI and history.
-    let phase: "blank" | "first" | "ready" = "blank"
     contents.on("did-navigate", (_, url) => {
       if (phase === "blank") return
       if (phase === "first") {
@@ -442,12 +449,14 @@ export class Browser extends EventEmitter {
       if (!this.activeId || visible) this.activeId = id
       if (visible) window.show()
       this.emit("change")
-      phase = "first"
-      void contents
-        .loadURL(target)
-        .catch((error) =>
-          this.store.event(id, "system", "error", String(error))
-        )
+      if (target) {
+        begin()
+        void contents
+          .loadURL(target)
+          .catch((error) =>
+            this.store.event(id, "system", "error", String(error))
+          )
+      }
       return info
     } catch (error) {
       // The user may close a window before it finishes opening.
@@ -482,8 +491,10 @@ export class Browser extends EventEmitter {
     this.current(id).window.close()
   }
   async navigate(url: string, id = this.activeId) {
-    this.current(id).activity.actedAt = Date.now()
-    await this.current(id).view.webContents.loadURL(webUrl(url))
+    const tab = this.current(id)
+    tab.activity.actedAt = Date.now()
+    tab.begin()
+    await tab.view.webContents.loadURL(webUrl(url))
     return this.current(id).info
   }
   // Run CDP work at full speed, even while the window is hidden.
