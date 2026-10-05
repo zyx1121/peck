@@ -152,6 +152,11 @@ try {
       ),
     "focused empty address field"
   )
+  // Peck writes its connection file once the first window is open.
+  await waitFor(
+    () => existsSync(`${dataPath}/connection.json`),
+    "connection file"
+  )
   const config = JSON.parse(
     await readFile(`${dataPath}/connection.json`, "utf8")
   )
@@ -1225,6 +1230,8 @@ try {
       throw error
     })
   assert.ok(!launched.isError, JSON.stringify(launched.content))
+  // The first window is ready, so a first call such as peck_navigate works.
+  assert.ok(parse(launched).activeTabId, "Peck answered before its window")
 } finally {
   await lazy.close()
 }
