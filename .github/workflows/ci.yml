@@ -1,11 +1,50 @@
 name: CI
 on:
+  # `edited` matters: a retitle changes the commit message a squash merge will
+  # write, so the title gate has to run again.
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
   push:
     branches: [main]
-  pull_request:
+  # release-please.yml dispatches this workflow on the release branch, so the
+  # release pull request carries checks without a PAT.
+  workflow_dispatch:
 permissions:
   contents: read
+  pull-requests: read
+concurrency:
+  # Every run, a retitle included, builds the head commit in full: a skipped
+  # job counts as passing a required check, so no run may skip the build.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The same set release-please-config.json gives a changelog section.
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            ci
+            chore
+            test
+            build
+            revert
+          requireScope: false
+          # A changelog line reads as prose, so the subject starts lowercase.
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: >-
+            The subject "{subject}" of pull request "{title}" starts with an
+            uppercase letter. Conventional Commit subjects are lowercase.
   verify:
     strategy:
       fail-fast: false

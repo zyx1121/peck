@@ -103,8 +103,7 @@ export class Browser extends EventEmitter {
   }
   // Without a URL the window opens empty, for the user to type one.
   async create(url?: string, visible = true, focus = true) {
-    if (this.tabs.size >= 8)
-      throw new Error("The demo supports up to 8 windows")
+    if (this.tabs.size >= 8) throw new Error("Peck supports up to 8 windows")
     const target = url === undefined ? undefined : webUrl(url)
     const id = randomUUID()
     // Cascade from the active window, like a new Safari window.

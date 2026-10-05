@@ -1,4 +1,4 @@
-# Peck demo
+# Peck
 
 Peck is a dedicated Chromium browser shared by a human and their existing
 coding agent. Tagline: **Point it out.** By zyx.
@@ -26,9 +26,9 @@ coding agent. Tagline: **Point it out.** By zyx.
   receive agent acknowledgement and replies in the same thread.
 - Capture real console, exceptions, HTTP request/response records, and WebSocket
   frame metadata. Persist bounded event history and comments in SQLite.
-- Public repository: zyx1121/peck. macOS Apple Silicon is the first demo target.
+- Public repository: zyx1121/peck. macOS Apple Silicon is the first target.
 
-## Demo acceptance
+## Acceptance
 
 - Actual Electron page interaction, not an iframe or a static browser mockup.
 - Select an element through the UI and deliver its comment through the real MCP.
@@ -40,5 +40,5 @@ coding agent. Tagline: **Point it out.** By zyx.
 ## Deferred
 
 Area/multiple selection, source locations outside React, cross-origin iframe and
-closed-shadow-root picking, navigation ownership arbitration, server log
-connectors, signed/notarized distribution, updater, and performance guarantees.
+closed-shadow-root picking, navigation ownership arbitration, updater, and
+performance guarantees.

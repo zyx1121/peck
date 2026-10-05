@@ -12,7 +12,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js"
 
-const VERSION = "0.1.0-demo.14"
+const VERSION = PECK_VERSION
 const LAUNCH_TIMEOUT_MS = 30000
 // Peck starts with the user's basic environment, not the agent's: no
 // ELECTRON_RUN_AS_NODE (it would start as Node.js and exit), session ids,

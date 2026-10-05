@@ -21,11 +21,13 @@ or the dividers between panels to resize them. Closing a window closes its
 page. **Move to Background** (Cmd+H) hides the window and keeps the page alive.
 The local MCP runs until you quit Peck.
 
-## Try the demo
+## Install
 
-Download the Apple Silicon app from [Releases](https://github.com/zyx1121/peck/releases).
-Open Peck and type your dev URL in the address field; new windows start empty.
-The demo is unsigned and not notarized.
+Download [Peck-macos-arm64.zip](https://github.com/zyx1121/peck/releases/latest/download/Peck-macos-arm64.zip)
+from the [latest release](https://github.com/zyx1121/peck/releases/latest),
+unzip it, and move Peck to Applications. It runs on Apple Silicon Macs and is
+signed and notarized by Apple. Open Peck and type your dev URL in the address
+field; new windows start empty.
 
 1. Click the pointer button (**Select element**) or press **Cmd+Shift+C**, then
    click a page element.
@@ -205,7 +207,19 @@ redaction, authentication, reply synchronization, background state, multiple
 windows, the stdio bridge, and persistence across restart. Artifacts are written to
 `output/playwright/`. See [AGENTS.md](AGENTS.md) for project rules.
 
-## Demo limits
+## Release
+
+[Release Please](https://github.com/googleapis/release-please) keeps a release
+pull request with the next version and changelog. Merging it tags the version
+and creates the GitHub release. Main CI builds the app from that commit; then,
+on a Mac whose keychain holds the Developer ID Application identity and a
+`notarytool` profile, attach the signed and notarized app:
+
+```sh
+scripts/release-mac.sh v0.1.0
+```
+
+## Limits
 
 - DOM picking targets the top-level document. Cross-origin frames, closed
   shadow roots, and area selection are future work. Source locations cover
@@ -213,11 +227,11 @@ windows, the stdio bridge, and persistence across restart. Artifacts are written
   the selector. Canvas content can be selected only as a canvas element.
 - Up to eight page windows share one dedicated Peck profile. Windows are not
   restored after fully quitting. Comments are restored.
-- No automatic source edits, model runtime, updater, signed distribution, or
-  macOS performance guarantees are included.
+- No automatic source edits, model runtime, updater, or macOS performance
+  guarantees are included.
 - WebSocket entries contain frame metadata, not message bodies. Backend logs
-  require a separate integration. Browser permission requests are denied in
-  the demo, including camera, microphone, and location.
+  come from the optional dev plugin. Browser permission requests are denied,
+  including camera, microphone, and location.
 - Human/agent navigation arbitration is not implemented. Agents should avoid
   moving the page while the user selects or writes feedback.
 
