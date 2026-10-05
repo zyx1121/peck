@@ -1,19 +1,11 @@
 <!doctype html>
-<html lang="zh-TW" class="dark">
+<html lang="en" class="dark" style="color-scheme: dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Point it out." />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'" />
     <title>Peck</title>
-    <script>
-      try {
-        if (localStorage.getItem("task-web-theme") === "light") {
-          document.documentElement.classList.replace("dark", "light");
-        }
-      } catch {}
-      document.documentElement.style.colorScheme = document.documentElement.classList.contains("light") ? "light" : "dark";
-    </script>
   </head>
   <body>
     <div id="root"></div>
