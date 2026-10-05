@@ -234,6 +234,9 @@ scripts/release-mac.sh v0.1.0
   including camera, microphone, and location.
 - Human/agent navigation arbitration is not implemented. Agents should avoid
   moving the page while the user selects or writes feedback.
+- Passkeys do not work yet: Peck reaches neither iCloud Keychain passkeys nor
+  a phone, so a sign-in that asks for one waits. Choose another way to sign
+  in, such as a password or a code.
 
 ## Contributing
 
