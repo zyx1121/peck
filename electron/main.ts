@@ -592,7 +592,13 @@ async function boot() {
       { role: "windowMenu" },
     ])
   )
-  await browser.create()
+  // Opened by an agent's MCP bridge: show the first window without taking
+  // focus from the app the user is typing in.
+  await browser.create(
+    undefined,
+    true,
+    !process.argv.includes("--peck-background")
+  )
   telemetry("app.started", {
     version: app.getVersion(),
     platform: process.platform,

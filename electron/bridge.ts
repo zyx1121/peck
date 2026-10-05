@@ -12,7 +12,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js"
 
-const VERSION = "0.1.0-demo.13"
+const VERSION = "0.1.0-demo.14"
 const LAUNCH_TIMEOUT_MS = 30000
 // Peck starts with the user's basic environment, not the agent's: no
 // ELECTRON_RUN_AS_NODE (it would start as Node.js and exit), session ids,
@@ -71,11 +71,12 @@ async function main() {
       return undefined
     }
   }
-  // Open Peck in the background and wait for its MCP. On macOS the packaged
-  // app opens through LaunchServices without taking focus; open passes its
-  // own environment on. "-n" starts it even when LaunchServices still lists a
-  // closed instance; a second Peck on the same data quits on its
-  // single-instance lock. Arguments after the bridge path go to Peck.
+  // Open Peck in the background and wait for its MCP. --peck-background
+  // shows its first window without taking focus. On macOS the packaged app
+  // opens through LaunchServices; open passes its own environment on. "-n"
+  // starts it even when LaunchServices still lists a closed instance; a
+  // second Peck on the same data quits on its single-instance lock.
+  // Arguments after the bridge path go to Peck.
   let launching: Promise<Connection> | undefined
   function launch() {
     // Plain Node.js cannot start the app.
@@ -91,7 +92,7 @@ async function main() {
       if (process.platform === "darwin" && bundle && packaged) {
         const opener = spawn(
           "/usr/bin/open",
-          ["-g", "-n", bundle, ...(extra.length ? ["--args", ...extra] : [])],
+          ["-g", "-n", bundle, "--args", "--peck-background", ...extra],
           { stdio: ["ignore", "pipe", "pipe"], env: appEnv() }
         )
         opener.stdout?.on("data", (data) => (failure += String(data)))
@@ -100,7 +101,11 @@ async function main() {
       } else
         spawn(
           process.execPath,
-          [...(packaged ? [] : [join(__dirname, "..")]), ...extra],
+          [
+            ...(packaged ? [] : [join(__dirname, "..")]),
+            "--peck-background",
+            ...extra,
+          ],
           { detached: true, stdio: "ignore", env: appEnv() }
         )
           .on("error", (error) => (failure += String(error)))
