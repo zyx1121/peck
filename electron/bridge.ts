@@ -63,32 +63,39 @@ async function main() {
   }
   // Open Peck in the background and wait for its MCP. On macOS the packaged
   // app opens through LaunchServices, so it neither takes focus nor inherits
-  // the agent's environment. Arguments after the bridge path go to Peck.
+  // the agent's environment. "-n" starts it even when LaunchServices still
+  // lists a closed instance, which would drop PECK_DATA_DIR; a second Peck on
+  // the same data quits on its single-instance lock. Arguments after the
+  // bridge path go to Peck.
   let launching: Promise<Connection> | undefined
   function launch() {
     // Plain Node.js cannot start the app.
     if (!process.versions.electron)
       return Promise.reject(new Error("Open Peck before connecting its MCP."))
     launching ??= (async () => {
+      let failure = ""
       const extra = process.argv.slice(2)
       const bundle = /^(.+?\.app)\/Contents\/MacOS\//.exec(
         process.execPath
       )?.[1]
       const packaged = __dirname.includes(".asar")
-      if (process.platform === "darwin" && bundle && packaged)
-        spawn(
-          "open",
+      if (process.platform === "darwin" && bundle && packaged) {
+        const opener = spawn(
+          "/usr/bin/open",
           [
             "-g",
+            "-n",
             ...(process.env.PECK_DATA_DIR
               ? ["--env", `PECK_DATA_DIR=${process.env.PECK_DATA_DIR}`]
               : []),
             bundle,
             ...(extra.length ? ["--args", ...extra] : []),
           ],
-          { stdio: "ignore" }
-        ).on("error", () => undefined)
-      else {
+          { stdio: ["ignore", "ignore", "pipe"] }
+        )
+        opener.stderr?.on("data", (data) => (failure += String(data)))
+        opener.on("error", (error) => (failure += String(error)))
+      } else {
         const env = { ...process.env }
         delete env.ELECTRON_RUN_AS_NODE
         spawn(
@@ -96,7 +103,7 @@ async function main() {
           [...(packaged ? [] : [join(__dirname, "..")]), ...extra],
           { detached: true, stdio: "ignore", env }
         )
-          .on("error", () => undefined)
+          .on("error", (error) => (failure += String(error)))
           .unref()
       }
       const deadline = Date.now() + LAUNCH_TIMEOUT_MS
@@ -105,7 +112,9 @@ async function main() {
         if (config) return config
         await new Promise((resolve) => setTimeout(resolve, 250))
       }
-      throw new Error("Peck did not start. Open Peck and try again.")
+      throw new Error(
+        `Peck did not start${failure ? ` (${failure.trim()})` : ""}. Open Peck and try again.`
+      )
     })().finally(() => {
       launching = undefined
     })
