@@ -44,6 +44,7 @@ if not {"68PK3GTMDD.*", "68PK3GTMDD.tw.zyx.peck.webauthn"} & set(groups):
     problems.append("its keychain groups do not cover 68PK3GTMDD.tw.zyx.peck.webauthn")
 if problems:
     sys.exit("The provisioning profile cannot be used: " + "; ".join(problems) + ".")
+print(f"Provisioning profile valid until {profile['ExpirationDate']:%Y-%m-%d} (UTC).")
 PY
 
 # The unsigned app main CI built from the release commit.
@@ -73,8 +74,9 @@ done
 sign --entitlements "$scripts/entitlements.app.mac.plist" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 # codesign and spctl do not evaluate the profile; launching does. Start the
-# signed binary once, as Node.js, before Apple sees it.
-if ! ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Peck" -e 0; then
+# signed binary once, as Node.js, before Apple sees it, for at most 30 s.
+if ! ELECTRON_RUN_AS_NODE=1 perl -e 'alarm 30; exec @ARGV' \
+  "$app/Contents/MacOS/Peck" -e 0; then
   echo "macOS refused to launch the signed app. Check the provisioning profile." >&2
   exit 1
 fi

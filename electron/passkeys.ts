@@ -57,9 +57,14 @@ export function setupPasskeys(
       try {
         const contents =
           (details.frame && webContents.fromFrame(details.frame)) || undefined
-        // A sheet on a hidden window would stay out of sight.
+        // The chooser is a sheet on the page's window. Without a visible
+        // one the user cannot see the page, so the request is cancelled: an
+        // unparented alert on macOS would also block the main process.
         const window = contents && windowOf(contents)
-        const shown = window && window.isVisible() ? window : undefined
+        if (!window || !window.isVisible()) {
+          answer()
+          return
+        }
         const { accounts } = details
         // The page leaving or closing closes the chooser.
         const leave = new AbortController()
@@ -77,10 +82,8 @@ export function setupPasskeys(
           cancelId: accounts.length,
           signal: leave.signal,
         }
-        ;(shown
-          ? dialog.showMessageBox(shown, options)
-          : dialog.showMessageBox(options)
-        )
+        dialog
+          .showMessageBox(window, options)
           .then(
             ({ response }) => answer(accounts[response]?.credentialId),
             () => answer()
