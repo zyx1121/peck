@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { z } from "zod"
 import { Browser, originOf } from "./browser"
 import { DevServers } from "./devserver"
+import { setupPasskeys } from "./passkeys"
 import { Waker, describeCommand } from "./waker"
 import { Store, safeUrl } from "./store"
 import { startMcp } from "./mcp"
@@ -61,6 +62,11 @@ async function boot() {
   mkdirSync(dataPath, { recursive: true, mode: 0o700 })
   const store = new Store(join(dataPath, "peck.sqlite"))
   const browser = new Browser(store)
+  try {
+    setupPasskeys((contents) => browser.windowOf(contents))
+  } catch (error) {
+    console.error("Passkeys are off:", error)
+  }
   const sessions = new Map<string, Session>()
   let quitting = false
   let pushTimer: ReturnType<typeof setTimeout> | undefined

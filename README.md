@@ -213,7 +213,10 @@ windows, the stdio bridge, and persistence across restart. Artifacts are written
 pull request with the next version and changelog. Merging it tags the version
 and creates the GitHub release. Main CI builds the app from that commit; then,
 on a Mac whose keychain holds the Developer ID Application identity and a
-`notarytool` profile, attach the signed and notarized app:
+`notarytool` profile, and with the Developer ID provisioning profile for
+`tw.zyx.peck`, which allows the passkey keychain group (default path
+`~/Library/MobileDevice/Provisioning Profiles/Peck_Developer_ID.provisionprofile`,
+or set `PECK_PROVISIONING_PROFILE`), attach the signed and notarized app:
 
 ```sh
 scripts/release-mac.sh v0.1.0
@@ -234,8 +237,11 @@ scripts/release-mac.sh v0.1.0
   including camera, microphone, and location.
 - Human/agent navigation arbitration is not implemented. Agents should avoid
   moving the page while the user selects or writes feedback.
-- Passkeys do not work yet: Peck reaches neither iCloud Keychain passkeys nor
-  a phone, so a sign-in that asks for one waits. Choose another way to sign
+- Passkeys need the signed release and a Mac that can prompt for Touch ID at
+  launch. They stay in Peck on this Mac: Peck reaches neither iCloud Keychain
+  passkeys nor a phone, so create a passkey in Peck for each site, and
+  removing Peck's data directory leaves them unusable. Until then, a sign-in
+  that asks for a passkey from elsewhere waits; choose another way to sign
   in, such as a password or a code.
 
 ## Contributing

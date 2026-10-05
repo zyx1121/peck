@@ -51,12 +51,17 @@ const playground = createHttpServer((req, res) => {
       .end(playgroundPage)
   else if (req.method === "POST" && path === "/demo/api/save") {
     req.resume()
-    res.writeHead(422, { "content-type": "application/json" }).end(
-      JSON.stringify({
-        message: "Demo validation error: workspace name is unavailable",
-        code: "DEMO_VALIDATION",
+    res
+      .writeHead(422, {
+        "content-type": "application/json",
+        "access-control-allow-credentials": "true",
       })
-    )
+      .end(
+        JSON.stringify({
+          message: "Demo validation error: workspace name is unavailable",
+          code: "DEMO_VALIDATION",
+        })
+      )
   } else res.writeHead(404).end()
 })
 await new Promise((done) => playground.listen(0, "127.0.0.1", done))
@@ -334,12 +339,16 @@ try {
     )
   )
   await call("peck_evaluate", {
-    expression: `fetch('/demo/api/save',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer private-test'},body:JSON.stringify({password:'do-not-store',name:'ok'})}).then(r=>r.status)`,
+    expression: `fetch('/demo/api/save',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer private-test'},body:JSON.stringify({password:'do-not-store',name:'ok',clientDataJSON:'passkey-client',signature:'passkey-signature'})}).then(r=>r.status)`,
   })
   await waitFor(
     async () =>
       parse(await call("peck_events", { kind: "network" })).some(
-        (e) => e.details.body?.password === "[redacted]"
+        (e) =>
+          e.details.body?.password === "[redacted]" &&
+          e.details.body?.clientDataJSON === "[redacted]" &&
+          e.details.body?.signature === "[redacted]" &&
+          e.details.headers?.["access-control-allow-credentials"] === "true"
       ),
     "redaction"
   )
@@ -347,6 +356,7 @@ try {
     parse(await call("peck_events", { kind: "network" }))
   )
   assert.ok(!captured.includes("do-not-store"))
+  assert.ok(!captured.includes("passkey-signature"))
   assert.ok(!captured.includes("private-test"))
   const watch = call("peck_watch_annotations", {
     afterSequence: 0,
