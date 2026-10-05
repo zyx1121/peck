@@ -183,12 +183,9 @@ async function boot() {
         store.event(browser.activeId, "system", level, message)
     }
   )
+  // Written once the first window is open (end of boot): a bridge that
+  // starts Peck and calls a tool right away needs that window.
   const connectionFile = join(dataPath, "connection.json")
-  writeFileSync(
-    connectionFile,
-    JSON.stringify({ url: mcp.status.url, token: mcp.token, pid: process.pid }),
-    { mode: 0o600 }
-  )
   function command(session: Session, name: string) {
     session.window.webContents.focus()
     session.window.webContents.send("peck:command", name)
@@ -604,6 +601,11 @@ async function boot() {
     undefined,
     true,
     !process.argv.includes("--peck-background")
+  )
+  writeFileSync(
+    connectionFile,
+    JSON.stringify({ url: mcp.status.url, token: mcp.token, pid: process.pid }),
+    { mode: 0o600 }
   )
   telemetry("app.started", {
     version: app.getVersion(),
