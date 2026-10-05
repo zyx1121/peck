@@ -502,6 +502,11 @@ export class Browser extends EventEmitter {
   async close(id: string) {
     this.current(id).window.close()
   }
+  // The page window that shows these contents, if any.
+  windowOf(contents: WebContents) {
+    return [...this.tabs.values()].find((t) => t.view.webContents === contents)
+      ?.window
+  }
   async navigate(url: string, id = this.activeId) {
     const tab = this.current(id)
     tab.activity.actedAt = Date.now()

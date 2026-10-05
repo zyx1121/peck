@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- V8 compiles JavaScript at run time under the hardened runtime. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- Passkeys with Touch ID (electron/passkeys.ts). These need the embedded
+       Developer ID provisioning profile for tw.zyx.peck. -->
+  <key>com.apple.application-identifier</key>
+  <string>68PK3GTMDD.tw.zyx.peck</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>68PK3GTMDD</string>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>68PK3GTMDD.tw.zyx.peck.webauthn</string>
+  </array>
+</dict>
+</plist>

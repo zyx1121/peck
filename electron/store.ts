@@ -7,8 +7,11 @@ import type {
   BrowserEvent,
   PickedElement,
 } from "../src/shared"
+// Header names, JSON keys, and URL parameters for secrets, credentials, and
+// passkey (WebAuthn) responses are redacted. Plain-text bodies and console
+// messages are not.
 const sensitive =
-  /authorization|cookie|password|passwd|secret|token|api[-_]?key/i
+  /authorization|cookie|password|passwd|secret|token|api[-_]?key|(?<!allow-)credential|assertion|signature|authenticator_?data|client_?data_?json|attestation_?object|user_?handle/i
 export function redact(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redact)
   if (value && typeof value === "object")
