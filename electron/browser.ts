@@ -450,7 +450,8 @@ export class Browser extends EventEmitter {
       })
       await contents.debugger.sendCommand("Runtime.enable")
       if (!this.activeId || visible) this.activeId = id
-      if (visible) focus ? window.show() : window.showInactive()
+      if (visible && focus) window.show()
+      else if (visible) window.showInactive()
       this.emit("change")
       if (target) {
         begin()
