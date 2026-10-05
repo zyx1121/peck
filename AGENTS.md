@@ -23,6 +23,8 @@ the same browser state. Do not add a model runtime or a second browser engine.
 - All install, build, typecheck, test, and packaging run on `ssh sandbox` in an
   isolated task directory. Use `bash -lc`. The MacBook is for editing, git,
   light checks, and opening the completed app for the user, not build workloads.
+  Signing and notarizing a release (`scripts/release-mac.sh`) is the exception:
+  the Developer ID stays in the MacBook's keychain.
 - GitHub documentation and code comments are English. Local notes are Chinese.
 - No dependencies in the iCloud clone. Use a scratchpad worktree for edits.
 
