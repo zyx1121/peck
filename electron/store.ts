@@ -44,7 +44,8 @@ export class Store extends EventEmitter {
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, tab TEXT, time INTEGER, payload TEXT);
       CREATE TABLE IF NOT EXISTS annotations (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, payload TEXT);
-      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);`)
+      CREATE TABLE IF NOT EXISTS agents (session TEXT PRIMARY KEY, payload TEXT);
+      CREATE TABLE IF NOT EXISTS permissions (origin TEXT, kind TEXT, allowed INTEGER, PRIMARY KEY (origin, kind));`)
     this.db
       .prepare("DELETE FROM events WHERE time < ?")
       .run(Date.now() - 7 * 86400000)
@@ -149,6 +150,46 @@ export class Store extends EventEmitter {
   forgetAgent(sessionId: string) {
     this.db.prepare("DELETE FROM agents WHERE session=?").run(sessionId)
     this.emit("change")
+  }
+  // Site permission decisions: true allowed, false blocked, absent ask.
+  permission(origin: string, kind: string): boolean | undefined {
+    if (this.closed) return
+    const row = this.db
+      .prepare("SELECT allowed FROM permissions WHERE origin=? AND kind=?")
+      .get(origin, kind)
+    return row ? Number(row.allowed) === 1 : undefined
+  }
+  permissions(origin?: string) {
+    if (this.closed) return []
+    const rows = origin
+      ? this.db
+          .prepare("SELECT origin,kind,allowed FROM permissions WHERE origin=?")
+          .all(origin)
+      : this.db.prepare("SELECT origin,kind,allowed FROM permissions").all()
+    return rows.map((r) => ({
+      origin: String(r.origin),
+      kind: String(r.kind),
+      allowed: Number(r.allowed) === 1,
+    }))
+  }
+  setPermission(origin: string, kind: string, allowed?: boolean) {
+    if (this.closed) return
+    if (allowed === undefined)
+      this.db
+        .prepare("DELETE FROM permissions WHERE origin=? AND kind=?")
+        .run(origin, kind)
+    else
+      this.db
+        .prepare(
+          "INSERT OR REPLACE INTO permissions(origin,kind,allowed) VALUES(?,?,?)"
+        )
+        .run(origin, kind, allowed ? 1 : 0)
+  }
+  clearPermissions(origin?: string) {
+    if (this.closed) return
+    if (origin)
+      this.db.prepare("DELETE FROM permissions WHERE origin=?").run(origin)
+    else this.db.prepare("DELETE FROM permissions").run()
   }
   annotations(): Annotation[] {
     if (this.closed) return []

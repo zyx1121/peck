@@ -36,5 +36,16 @@ const paths = await packager({
   appCategoryType: "public.app-category.developer-tools",
   executableName: "Peck",
   prune: false,
+  // macOS asks before a page uses these, naming Peck and this reason.
+  extendInfo: {
+    NSCameraUsageDescription:
+      "Websites you open in Peck can ask to use the camera.",
+    NSMicrophoneUsageDescription:
+      "Websites you open in Peck can ask to use the microphone.",
+    NSLocationUsageDescription:
+      "Websites you open in Peck can ask for your location.",
+    NSLocationWhenInUseUsageDescription:
+      "Websites you open in Peck can ask for your location.",
+  },
 })
 console.log(paths.join("\n"))

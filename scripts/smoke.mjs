@@ -200,6 +200,85 @@ try {
   assert.ok((await address.inputValue()).endsWith("/demo"))
   await address.press("Escape")
   assert.equal(await address.inputValue(), "Peck Playground")
+  // Site permissions: the first request asks on a sheet, the answer is kept
+  // per origin, and the menu's action changes or resets it. The sheet is
+  // stubbed to record its message and answer.
+  await app.evaluate(({ dialog }) => {
+    globalThis.peckAsked = []
+    globalThis.peckSheet = dialog.showMessageBox
+    dialog.showMessageBox = async (_window, options) => {
+      globalThis.peckAsked.push(options.message)
+      return { response: globalThis.peckAnswer ?? 0 }
+    }
+  })
+  const asked = () => app.evaluate(() => globalThis.peckAsked)
+  const requestNotifications = () =>
+    guest.evaluate(() => Notification.requestPermission())
+  const sitePermission = (args) =>
+    shell.evaluate((a) => window.peck.invoke("site-permission", a), args)
+  assert.equal(await requestNotifications(), "granted")
+  assert.deepEqual(await asked(), [
+    "127.0.0.1:" + new URL(playgroundUrl).port + " wants to show notifications",
+  ])
+  assert.equal(await requestNotifications(), "granted")
+  assert.equal((await asked()).length, 1)
+  await sitePermission({ kind: "notifications", value: "block" })
+  assert.equal(await requestNotifications(), "denied")
+  assert.equal((await asked()).length, 1)
+  assert.deepEqual(await sitePermission({ value: "ask" }), [])
+  await app.evaluate(() => (globalThis.peckAnswer = 1))
+  assert.equal(await requestNotifications(), "denied")
+  assert.equal((await asked()).length, 2)
+  assert.deepEqual(await sitePermission({ value: "ask" }), [])
+  // A cross-origin iframe asks as the top-level page: allowing the framed
+  // site must not let a page that embeds it in.
+  await app.evaluate(() => (globalThis.peckAnswer = 1))
+  // Another port is another origin on the same site, which keeps the frame
+  // in the page's process where network tracking sees it finish.
+  const framedServer = createHttpServer(playground.listeners("request")[0])
+  await new Promise((resolve) => framedServer.listen(0, "127.0.0.1", resolve))
+  const framedUrl = `http://127.0.0.1:${framedServer.address().port}/demo`
+  await sitePermission({ kind: "location", value: "block" })
+  await guest.evaluate((src) => {
+    const frame = document.createElement("iframe")
+    frame.id = "permission-frame"
+    frame.allow = "geolocation"
+    frame.src = src
+    document.body.append(frame)
+  }, framedUrl)
+  const framed = await waitFor(
+    () => Promise.resolve(guest.frames().find((f) => f.url() === framedUrl)),
+    "framed page"
+  )
+  await framed.waitForLoadState()
+  const locate = () =>
+    framed.evaluate(
+      () =>
+        new Promise((resolve) =>
+          navigator.geolocation.getCurrentPosition(
+            () => resolve("granted"),
+            (e) => resolve(e.code === 1 ? "denied" : "unavailable"),
+            { timeout: 3000 }
+          )
+        )
+    )
+  assert.equal(await locate(), "denied")
+  assert.equal((await asked()).length, 2, "blocked on the top-level site")
+  await sitePermission({ value: "ask" })
+  assert.equal(await locate(), "denied")
+  assert.equal(
+    (await asked()).at(-1),
+    "127.0.0.1:" + new URL(playgroundUrl).port + " wants to know your location"
+  )
+  await guest.evaluate(() =>
+    document.getElementById("permission-frame").remove()
+  )
+  framedServer.close()
+  await sitePermission({ value: "ask" })
+  await app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = globalThis.peckSheet
+  })
+  console.log("PASS: site permissions ask once, persist, and reset")
   // Comments, Network, and Console share the sidebar. Each has a toolbar
   // toggle, and all start open.
   const panelButton = (name) => shell.getByRole("button", { name, exact: true })
