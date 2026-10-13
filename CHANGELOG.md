@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/zyx1121/peck/compare/v0.2.0...v0.3.0) (2026-10-13)
+
+
+### Features
+
+* ask before sites use the camera, microphone, and other permissions ([#66](https://github.com/zyx1121/peck/issues/66)) ([b22ee57](https://github.com/zyx1121/peck/commit/b22ee57dcb65c8a7a5dca2cb790bfd91b2207aab))
+
 ## [0.2.0](https://github.com/zyx1121/peck/compare/v0.1.0...v0.2.0) (2026-10-05)
 
 
