@@ -230,6 +230,51 @@ try {
   assert.equal(await requestNotifications(), "denied")
   assert.equal((await asked()).length, 2)
   assert.deepEqual(await sitePermission({ value: "ask" }), [])
+  // A cross-origin iframe asks as the top-level page: allowing the framed
+  // site must not let a page that embeds it in.
+  await app.evaluate(() => (globalThis.peckAnswer = 1))
+  // Another port is another origin on the same site, which keeps the frame
+  // in the page's process where network tracking sees it finish.
+  const framedServer = createHttpServer(playground.listeners("request")[0])
+  await new Promise((resolve) => framedServer.listen(0, "127.0.0.1", resolve))
+  const framedUrl = `http://127.0.0.1:${framedServer.address().port}/demo`
+  await sitePermission({ kind: "location", value: "block" })
+  await guest.evaluate((src) => {
+    const frame = document.createElement("iframe")
+    frame.id = "permission-frame"
+    frame.allow = "geolocation"
+    frame.src = src
+    document.body.append(frame)
+  }, framedUrl)
+  const framed = await waitFor(
+    () => Promise.resolve(guest.frames().find((f) => f.url() === framedUrl)),
+    "framed page"
+  )
+  await framed.waitForLoadState()
+  const locate = () =>
+    framed.evaluate(
+      () =>
+        new Promise((resolve) =>
+          navigator.geolocation.getCurrentPosition(
+            () => resolve("granted"),
+            (e) => resolve(e.code === 1 ? "denied" : "unavailable"),
+            { timeout: 3000 }
+          )
+        )
+    )
+  assert.equal(await locate(), "denied")
+  assert.equal((await asked()).length, 2, "blocked on the top-level site")
+  await sitePermission({ value: "ask" })
+  assert.equal(await locate(), "denied")
+  assert.equal(
+    (await asked()).at(-1),
+    "127.0.0.1:" + new URL(playgroundUrl).port + " wants to know your location"
+  )
+  await guest.evaluate(() =>
+    document.getElementById("permission-frame").remove()
+  )
+  framedServer.close()
+  await sitePermission({ value: "ask" })
   await app.evaluate(({ dialog }) => {
     dialog.showMessageBox = globalThis.peckSheet
   })

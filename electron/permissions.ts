@@ -9,7 +9,8 @@ import type { Store } from "./store"
 
 // Site permissions, as a browser asks for them: the first request from an
 // origin shows a sheet on its window, and the answer is kept per origin in
-// SQLite until the user changes it from the menu.
+// SQLite until the user changes it from the menu. The origin is always the
+// top-level page's.
 export const KINDS = {
   camera: "Camera",
   microphone: "Microphone",
@@ -142,7 +143,10 @@ export function setupPermissions(
   session.setPermissionRequestHandler(
     (contents, permission, callback, details) => {
       if (ALWAYS.has(permission)) return callback(true)
-      const origin = webOrigin(details.requestingUrl ?? "")
+      // Answers belong to the site in the address bar, as in Chrome. An
+      // iframe asks as the page that embeds it, so a site cannot borrow
+      // another site's answer by framing it.
+      const origin = webOrigin(contents.getURL())
       const kinds = kindsOf(
         permission,
         "mediaTypes" in details ? details.mediaTypes : undefined
@@ -161,7 +165,7 @@ export function setupPermissions(
   session.setPermissionCheckHandler(
     (_contents, permission, requestingOrigin, details) => {
       if (ALWAYS.has(permission)) return true
-      const origin = webOrigin(requestingOrigin)
+      const origin = webOrigin(details.embeddingOrigin ?? requestingOrigin)
       const kinds = kindsOf(permission, [details.mediaType ?? ""])
       if (!origin || !kinds.length) return false
       return kinds.every(
