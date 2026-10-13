@@ -7,6 +7,14 @@
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
+  <!-- Pages may use the camera, microphone, and location once the user
+       allows them (electron/permissions.ts). -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.personal-information.location</key>
+  <true/>
   <!-- Passkeys with Touch ID (electron/passkeys.ts). These need the embedded
        Developer ID provisioning profile for tw.zyx.peck. -->
   <key>com.apple.application-identifier</key>

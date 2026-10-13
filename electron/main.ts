@@ -6,6 +6,7 @@ import { z } from "zod"
 import { Browser, originOf } from "./browser"
 import { DevServers } from "./devserver"
 import { setupPasskeys } from "./passkeys"
+import { KINDS, setupPermissions, webOrigin, type Kind } from "./permissions"
 import { Waker, describeCommand } from "./waker"
 import { Store, safeUrl } from "./store"
 import { startMcp } from "./mcp"
@@ -68,6 +69,15 @@ async function boot() {
     console.error("Passkeys are off:", error)
   }
   const sessions = new Map<string, Session>()
+  setupPermissions(
+    store,
+    (contents) => browser.windowOf(contents),
+    (contents, message) => {
+      const window = browser.windowOf(contents)
+      const session = [...sessions.values()].find((s) => s.window === window)
+      if (session) command(session, `error:${message}`)
+    }
+  )
   let quitting = false
   let pushTimer: ReturnType<typeof setTimeout> | undefined
   function state(session: Session): PeckState {
@@ -472,6 +482,7 @@ async function boot() {
               click: openWindow,
             },
             { label: "Local MCP…", click: () => command(session, "connect") },
+            ...sitePermissions(session),
             { type: "separator" },
             {
               label: "Move to Background",
@@ -485,6 +496,25 @@ async function boot() {
             },
           ]).popup({ window })
           return
+        case "site-permission": {
+          const origin = webOrigin(browser.current(id).info.url)
+          if (!origin) throw new Error("This page has no site permissions")
+          const kind = z
+            .enum(Object.keys(KINDS) as [Kind, ...Kind[]])
+            .optional()
+            .parse(args.kind)
+          const value = z.enum(["ask", "allow", "block"]).parse(args.value)
+          if (!kind) {
+            if (value !== "ask") throw new Error("Choose a permission")
+            store.clearPermissions(origin)
+          } else
+            store.setPermission(
+              origin,
+              kind,
+              value === "ask" ? undefined : value === "allow"
+            )
+          return store.permissions(origin)
+        }
         case "copy-config": {
           const config = {
             mcpServers: {
@@ -509,6 +539,51 @@ async function boot() {
       }
     }
   )
+  // The More menu's permissions for the page's site: ask, allow or block.
+  function sitePermissions(
+    session: Session
+  ): Electron.MenuItemConstructorOptions[] {
+    const origin = webOrigin(browser.current(session.id).info.url)
+    if (!origin) return []
+    const set = (kind: Kind | undefined, value: string) => () => {
+      if (kind)
+        store.setPermission(
+          origin,
+          kind,
+          value === "ask" ? undefined : value === "allow"
+        )
+      else store.clearPermissions(origin)
+    }
+    return [
+      {
+        label: `Permissions for ${new URL(origin).host}`,
+        submenu: [
+          ...(Object.entries(KINDS) as [Kind, string][]).map(
+            ([kind, label]) => {
+              const allowed = store.permission(origin, kind)
+              const current =
+                allowed === undefined ? "ask" : allowed ? "allow" : "block"
+              return {
+                label,
+                submenu: (["ask", "allow", "block"] as const).map((value) => ({
+                  label: { ask: "Ask", allow: "Allow", block: "Block" }[value],
+                  type: "radio" as const,
+                  checked: current === value,
+                  click: set(kind, value),
+                })),
+              }
+            }
+          ),
+          { type: "separator" },
+          {
+            label: "Reset Permissions",
+            enabled: store.permissions(origin).length > 0,
+            click: set(undefined, "ask"),
+          },
+        ],
+      },
+    ]
+  }
   const withFocused = (run: (session: Session) => void) => () => {
     const session = focused()
     if (session) run(session)

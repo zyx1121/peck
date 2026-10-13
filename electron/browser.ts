@@ -196,9 +196,6 @@ export class Browser extends EventEmitter {
     const setTitle = (title: string) => {
       if (!window.isDestroyed()) window.setTitle(title || "Peck")
     }
-    contents.session.setPermissionRequestHandler((_wc, _permission, callback) =>
-      callback(false)
-    )
     contents.setWindowOpenHandler(({ url }) => {
       void this.create(url, !window.isDestroyed() && window.isVisible()).catch(
         (e) => this.store.event(id, "system", "error", String(e))
