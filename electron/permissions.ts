@@ -163,9 +163,11 @@ export function setupPermissions(
   // Undecided reads as granted so the page goes on to request it, except
   // notifications, which a page would then send without asking.
   session.setPermissionCheckHandler(
-    (_contents, permission, requestingOrigin, details) => {
+    (contents, permission, requestingOrigin, details) => {
       if (ALWAYS.has(permission)) return true
-      const origin = webOrigin(details.embeddingOrigin ?? requestingOrigin)
+      const origin = webOrigin(
+        contents?.getURL() || details.embeddingOrigin || requestingOrigin
+      )
       const kinds = kindsOf(permission, [details.mediaType ?? ""])
       if (!origin || !kinds.length) return false
       return kinds.every(
