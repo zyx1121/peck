@@ -14,7 +14,12 @@ import { locate as locateSource } from "./source"
 import { describe, met, type Activity, type WaitCondition } from "./wait"
 
 export function webUrl(input: string) {
-  const url = new URL(input.includes("://") ? input : `https://${input}`)
+  const typed = input.trim()
+  const url = new URL(typed.includes("://") ? typed : `https://${typed}`)
+  // Without a scheme, local hosts such as localhost:3000, 10.0.0.5:4870 or a
+  // single-label name are usually plain HTTP dev servers.
+  if (!typed.includes("://") && isLocalHost(url.hostname))
+    url.protocol = "http:"
   if (
     !["http:", "https:"].includes(url.protocol) ||
     url.username ||
@@ -24,6 +29,14 @@ export function webUrl(input: string) {
       "Only HTTP(S) URLs without embedded credentials are supported"
     )
   return url.toString()
+}
+function isLocalHost(host: string) {
+  return (
+    !host.includes(".") ||
+    host.startsWith("[") ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ||
+    /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)
+  )
 }
 export function originOf(url: string) {
   try {

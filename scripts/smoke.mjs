@@ -168,12 +168,17 @@ try {
   )
   assert.equal(parse(await call("peck_status")).tabs[0].url, "")
   console.log("Shell loaded; opening the playground")
-  await call("peck_navigate", { url: playgroundUrl })
+  // Typed without a scheme, a local address opens over plain HTTP.
+  const typedAddress = shell.getByRole("textbox", { name: "Address" })
+  await typedAddress.fill(playgroundUrl.replace("http://", ""))
+  await typedAddress.press("Enter")
   const guest = await waitFor(
     () => Promise.resolve(app.windows().find((p) => p.url().endsWith("/demo"))),
     "playground page"
   )
   await guest.locator("#headline").waitFor()
+  assert.ok(guest.url().startsWith("http://"))
+  assert.equal(await shell.locator(".notice").count(), 0)
   const coldStartMs = Date.now() - started
   // One compact header: no tab strip or footer, and the page title in place
   // of the address until the field is focused.
