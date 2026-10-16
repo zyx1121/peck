@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/zyx1121/peck/compare/v0.3.0...v0.3.1) (2026-10-16)
+
+
+### Bug fixes
+
+* open schemeless local addresses over HTTP ([#69](https://github.com/zyx1121/peck/issues/69)) ([699fc02](https://github.com/zyx1121/peck/commit/699fc02ad6ccbe36774f2a3b6dad3fb719b563c5))
+
 ## [0.3.0](https://github.com/zyx1121/peck/compare/v0.2.0...v0.3.0) (2026-10-13)
 
 
