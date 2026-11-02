@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/zyx1121/peck/compare/v0.3.1...v0.4.0) (2026-11-02)
+
+
+### Features
+
+* run headless when an agent opens Peck, and trim the toolbar ([#71](https://github.com/zyx1121/peck/issues/71)) ([28b69b9](https://github.com/zyx1121/peck/commit/28b69b99868a83350c120a84473e7b83ad1c90bb))
+
 ## [0.3.1](https://github.com/zyx1121/peck/compare/v0.3.0...v0.3.1) (2026-10-16)
 
 
