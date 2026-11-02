@@ -8,16 +8,17 @@ coding agent. Tagline: **Point it out.** By zyx.
 - Electron and TypeScript, with one Chromium WebContentsView per page window.
   No tab strip: each page is its own window, and all windows share one local
   MCP and profile.
-- The browser workspace fills the window. A single Safari-like toolbar row holds
-  the traffic lights, navigation, the page title (the address while editing),
-  element selection, toggles for the Comments, Network, and Console panels, a
-  new window button, and a menu for low-frequency actions. The panels stack in
+- The browser workspace fills the window. A single toolbar row holds only the
+  traffic lights, the page title (the address while editing), element
+  selection, and a menu. Agents drive Peck, so everything else (panel toggles,
+  new window, back, forward, reload) lives in the menu or a shortcut. The panels stack in
   one resizable sidebar. The page and sidebar extend to the bottom edge. The
   interface is English and black only, separated by hairlines, without gray
   layers or a light theme. No outer website template, product heading, corner
   links, status footer, or copyright footer.
-- Visible and background modes preserve the same live page. No separate
-  headless engine and no embedded model. Peck never starts a new agent. When
+- Visible and background modes preserve the same live page. When an agent's
+  bridge opens Peck, it runs headless: windows stay hidden and Peck stays out
+  of the Dock until someone shows a window. No separate headless engine and no embedded model. Peck never starts a new agent. When
   the user opts a registered conversation in, new user feedback resumes it
   through the agent's official CLI if nothing is watching and no agent runs
   in that directory, with narrow permissions and never a permission bypass.

@@ -284,19 +284,43 @@ try {
     dialog.showMessageBox = globalThis.peckSheet
   })
   console.log("PASS: site permissions ask once, persist, and reset")
-  // Comments, Network, and Console share the sidebar. Each has a toolbar
-  // toggle, and all start open.
-  const panelButton = (name) => shell.getByRole("button", { name, exact: true })
+  // Comments, Network, and Console share the sidebar, all open at first.
+  // The toolbar has no panel buttons: the More menu toggles them.
   const panel = (name) => shell.getByRole("region", { name, exact: true })
+  await app.evaluate(({ Menu }) => {
+    globalThis.peckBuild = Menu.buildFromTemplate
+    Menu.buildFromTemplate = (template) => {
+      globalThis.peckMenu = template
+      return { popup() {} }
+    }
+  })
+  const moreItem = async (label) => {
+    await app.evaluate(() => (globalThis.peckMenu = undefined))
+    await shell.getByRole("button", { name: "More", exact: true }).click()
+    await waitFor(
+      () => app.evaluate(() => !!globalThis.peckMenu),
+      "More menu"
+    )
+    return app.evaluate((_, label) => {
+      const item = globalThis.peckMenu.find((i) => i.label === label)
+      item.click()
+      return item.checked
+    }, label)
+  }
+  const togglePanel = async (name, open) => {
+    assert.equal(await moreItem(name), !open, `${name} checked`)
+    await panel(name).waitFor({ state: open ? "visible" : "detached" })
+  }
   const showPanel = async (name) => {
-    if ((await panelButton(name).getAttribute("aria-pressed")) !== "true")
-      await panelButton(name).click()
-    await panel(name).waitFor()
+    if (!(await panel(name).isVisible())) await togglePanel(name, true)
   }
-  for (const name of ["Comments", "Network", "Console"]) {
-    assert.equal(await panelButton(name).getAttribute("aria-pressed"), "true")
+  for (const name of ["Comments", "Network", "Console"])
     await panel(name).waitFor()
-  }
+  assert.equal(
+    await shell.locator(".address-bar button").count(),
+    2,
+    "Toolbar keeps only Select element and More"
+  )
   const drag = async (box, dx, dy) => {
     const x = box.x + box.width / 2
     const y = box.y + box.height / 2
@@ -343,17 +367,13 @@ try {
   )
   // A closed panel leaves its space to the others; with all three closed,
   // the sidebar slides away.
-  await panelButton("Network").click()
-  await panel("Network").waitFor({ state: "detached" })
-  assert.equal(
-    await panelButton("Network").getAttribute("aria-pressed"),
-    "false"
-  )
+  await togglePanel("Network", false)
   await panel("Console").waitFor()
-  await panelButton("Comments").click()
-  await panelButton("Console").click()
+  await togglePanel("Comments", false)
+  await togglePanel("Console", false)
   await waitFor(async () => !(await inspector.isVisible()), "closed sidebar")
-  for (const name of ["Comments", "Network", "Console"]) await showPanel(name)
+  for (const name of ["Comments", "Network", "Console"])
+    await togglePanel(name, true)
   await inspector.waitFor()
   const layout = JSON.parse(
     await shell.evaluate(() => localStorage.getItem("peck-layout"))
@@ -365,7 +385,6 @@ try {
   const firstPage = parse(await call("peck_status")).tabs[0]
   assert.ok(firstPage.url.endsWith("/demo"))
   assert.equal(firstPage.canGoBack, false)
-  assert.ok(await shell.getByRole("button", { name: "Back" }).isDisabled())
   assert.equal(
     (await fetch(config.url, { method: "POST", body: "{}" })).status,
     403
@@ -700,7 +719,7 @@ try {
     async () => (await windowCount()) === beforeTabs,
     "closed page window"
   )
-  await shell.getByRole("button", { name: "New window", exact: true }).click()
+  await moreItem("New Window")
   const second = await waitFor(
     () =>
       Promise.resolve(
@@ -1316,6 +1335,19 @@ try {
   assert.ok(!launched.isError, JSON.stringify(launched.content))
   // The first window is ready, so a first call such as peck_navigate works.
   assert.ok(parse(launched).activeTabId, "Peck answered before its window")
+  // Opened by the bridge, Peck runs headless: no window shows, and
+  // activating a window does not show it either.
+  const headlessTabs = parse(launched).tabs
+  assert.equal(headlessTabs.length, 1)
+  assert.equal(headlessTabs[0].visible, false, "Bridge launch showed a window")
+  const activated = parse(
+    await lazy.callTool({
+      name: "peck_tabs",
+      arguments: { action: "activate", tabId: headlessTabs[0].id },
+    })
+  )
+  assert.equal(activated[0].visible, false, "Activating showed a window")
+  console.log("PASS: bridge launch runs headless")
 } finally {
   await lazy.close()
 }

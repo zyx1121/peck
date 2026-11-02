@@ -149,6 +149,7 @@ async function boot() {
     }
     if (visible) browser.activate(id)
     else browser.current(id).window.hide()
+    syncDock()
     push()
   }
   // The dev plugin's token: Peck sends it when pulling dev server events.
@@ -250,6 +251,18 @@ async function boot() {
     })
   })
   browser.on("closed", (id: string) => sessions.delete(id))
+  // Peck shows in the Dock only while one of its windows is visible.
+  let docked = !app.dock || app.dock.isVisible()
+  function syncDock() {
+    if (!app.dock || quitting) return
+    const shown = browser.anyShown()
+    if (shown === docked) return
+    docked = shown
+    if (shown) void app.dock.show()
+    else app.dock.hide()
+  }
+  browser.on("change", syncDock)
+  browser.on("closed", syncDock)
   browser.on("change", push)
   store.on("change", push)
   browser.on("navigated", (id: string) => {
@@ -474,8 +487,26 @@ async function boot() {
         case "hide":
           await visibility(false, id)
           return
-        case "menu":
+        case "menu": {
+          const panels = z
+            .object({
+              comments: z.boolean(),
+              network: z.boolean(),
+              console: z.boolean(),
+            })
+            .partial()
+            .parse(args.panels ?? {})
+          const panel = (id: keyof typeof panels, label: string) => ({
+            label,
+            type: "checkbox" as const,
+            checked: !!panels[id],
+            click: () => command(session, `panel:${id}:${panels[id] ? 0 : 1}`),
+          })
           Menu.buildFromTemplate([
+            panel("comments", "Comments"),
+            panel("network", "Network"),
+            panel("console", "Console"),
+            { type: "separator" },
             {
               label: "New Window",
               accelerator: "CmdOrCtrl+N",
@@ -496,6 +527,7 @@ async function boot() {
             },
           ]).popup({ window })
           return
+        }
         case "site-permission": {
           const origin = webOrigin(browser.current(id).info.url)
           if (!origin) throw new Error("This page has no site permissions")
@@ -670,13 +702,12 @@ async function boot() {
       { role: "windowMenu" },
     ])
   )
-  // Opened by an agent's MCP bridge: show the first window without taking
-  // focus from the app the user is typing in.
-  await browser.create(
-    undefined,
-    true,
-    !process.argv.includes("--peck-background")
-  )
+  // Opened by an agent's MCP bridge: run headless. The first window stays
+  // hidden and Peck stays out of the Dock until someone shows a window.
+  const headless = process.argv.includes("--peck-background")
+  if (headless) app.dock?.hide()
+  await browser.create(undefined, !headless, !headless)
+  syncDock()
   writeFileSync(
     connectionFile,
     JSON.stringify({ url: mcp.status.url, token: mcp.token, pid: process.pid }),

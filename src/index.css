@@ -89,14 +89,12 @@ button {
 .address-bar form {
   -webkit-app-region: no-drag;
 }
-.navigation-controls,
 .window-actions {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   gap: 2px;
 }
-.navigation-controls,
 .location,
 .window-actions {
   border: 1px solid var(--border);
