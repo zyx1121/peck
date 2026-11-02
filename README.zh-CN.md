@@ -69,11 +69,11 @@ codex mcp add peck --env ELECTRON_RUN_AS_NODE=1 -- \
 }
 ```
 
-Peck 没有运行时，第一次调用 Peck 工具会在后台把它打开。可选的 [Peck skill](skills/peck/SKILL.md) 说明了整个留言流程。
+Peck 没有运行时，第一次调用 Peck 工具会以 headless 模式打开它：没有窗口，也没有 Dock 图标。要看页面就请 agent 显示窗口(`peck_window`)，或自己打开 Peck。可选的 [Peck skill](skills/peck/SKILL.md) 说明了整个留言流程。
 
 ### 窗口与后台模式
 
-每个页面各有一个窗口，只有一行工具栏。Comments、Network、Console 三个面板共用一个侧栏。**Move to Background**(Cmd+H)会隐藏窗口但保留页面，之后可以回来看同一个实时页面。
+每个页面各有一个窗口，只有一行工具栏：网址、**Select element** 和菜单。Comments、Network、Console 三个面板共用一个侧栏，从菜单开关。**Move to Background**(Cmd+H)会隐藏窗口但保留页面，之后可以回来看同一个实时页面。
 
 ### 唤醒停下的对话
 

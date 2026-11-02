@@ -10,8 +10,6 @@ import {
 } from "react"
 import {
   ArrowDownUp,
-  ArrowLeft,
-  ArrowRight,
   Check,
   CheckCheck,
   Circle,
@@ -20,8 +18,6 @@ import {
   MessageSquare,
   MousePointer2,
   MoreHorizontal,
-  Plus,
-  RefreshCw,
   Send,
   SquareTerminal,
   Unplug,
@@ -206,10 +202,18 @@ export default function App() {
     return window.peck.onCommand((command) => {
       if (command === "connect") setMcpOpen(true)
       else if (command === "address") address.current?.focus()
+      else if (command.startsWith("panel:")) {
+        // From the More menu: "panel:<section>:<1|0>".
+        const [, id, open] = command.split(":")
+        if (sections.some((s) => s.id === id)) {
+          setMcpOpen(false)
+          setOpen(id as Section, open === "1")
+        }
+      }
       else if (command.startsWith("error:"))
         showNotice(command.slice(6).replace(/^Error: /, ""))
     })
-  }, [showNotice])
+  }, [showNotice, setOpen])
   // An empty window is ready for a URL.
   const focusedEmpty = useRef(false)
   useEffect(() => {
@@ -413,22 +417,6 @@ export default function App() {
       ) : (
         <section className="workspace" aria-label="Browser">
           <header className="address-bar" aria-label="Toolbar">
-            <div className="navigation-controls">
-              <IconButton
-                label="Back"
-                disabled={!state.page.canGoBack}
-                onClick={() => void call("back")}
-              >
-                <ArrowLeft />
-              </IconButton>
-              <IconButton
-                label="Forward"
-                disabled={!state.page.canGoForward}
-                onClick={() => void call("forward")}
-              >
-                <ArrowRight />
-              </IconButton>
-            </div>
             <form
               className="location"
               onSubmit={(event) => {
@@ -464,13 +452,6 @@ export default function App() {
                 spellCheck={false}
                 autoComplete="off"
               />
-              <IconButton label="Reload" onClick={() => void call("reload")}>
-                <RefreshCw
-                  className={
-                    state.page.loading ? "motion-safe:animate-spin" : ""
-                  }
-                />
-              </IconButton>
             </form>
             <div className="window-actions">
               <IconButton
@@ -489,29 +470,19 @@ export default function App() {
               >
                 <MousePointer2 />
               </IconButton>
-              {sections.map((s) => (
-                <IconButton
-                  key={s.id}
-                  label={s.label}
-                  pressed={!mcpOpen && layout.open[s.id]}
-                  onClick={() => {
-                    // Local MCP covers the panels: leave it and show this one.
-                    if (mcpOpen) {
-                      setMcpOpen(false)
-                      setOpen(s.id, true)
-                    } else setOpen(s.id, !layout.open[s.id])
-                  }}
-                >
-                  {s.icon}
-                </IconButton>
-              ))}
               <IconButton
-                label="New window"
-                onClick={() => void call("new-window")}
+                label="More"
+                onClick={() =>
+                  void call("menu", {
+                    panels: Object.fromEntries(
+                      sections.map((s) => [
+                        s.id,
+                        !mcpOpen && layout.open[s.id],
+                      ])
+                    ),
+                  })
+                }
               >
-                <Plus />
-              </IconButton>
-              <IconButton label="More" onClick={() => void call("menu")}>
                 <MoreHorizontal />
               </IconButton>
             </div>

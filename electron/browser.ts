@@ -486,12 +486,26 @@ export class Browser extends EventEmitter {
       throw error
     }
   }
-  activate(id: string) {
+  // Whether the user can see any window. A capture briefly shows a hidden
+  // window at zero opacity; that does not count.
+  anyShown() {
+    return [...this.tabs.entries()].some(
+      ([id, t]) =>
+        !t.window.isDestroyed() &&
+        t.window.isVisible() &&
+        (!this.captures.has(id) || this.shownDuringCapture.has(id))
+    )
+  }
+  // Agents switch the active window without showing it; the user's
+  // Show Window and reopening the app show it.
+  activate(id: string, show = true) {
     const { window } = this.current(id)
-    if (this.captures.has(id)) this.shownDuringCapture.add(id)
     this.activeId = id
-    window.show()
-    window.focus()
+    if (show) {
+      if (this.captures.has(id)) this.shownDuringCapture.add(id)
+      window.show()
+      window.focus()
+    }
     this.emit("change")
   }
   layout(

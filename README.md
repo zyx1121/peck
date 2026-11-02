@@ -67,11 +67,11 @@ Any other client:
 }
 ```
 
-When Peck is not running, the first Peck tool call opens it in the background. The optional [Peck skill](skills/peck/SKILL.md) describes the feedback loop.
+When Peck is not running, the first Peck tool call opens it headless: no window and no Dock icon. Ask the agent to show the window (`peck_window`), or open Peck yourself, to see the page. The optional [Peck skill](skills/peck/SKILL.md) describes the feedback loop.
 
 ### Windows and background mode
 
-Each page has its own window with one toolbar row. The Comments, Network and Console panels share one sidebar. **Move to Background** (Cmd+H) hides the window and keeps the page alive, so you can review the same live page later.
+Each page has its own window with one toolbar row: the address, **Select element** and a menu. The Comments, Network and Console panels share one sidebar, toggled from the menu. **Move to Background** (Cmd+H) hides the window and keeps the page alive, so you can review the same live page later.
 
 ### Resume a stopped conversation
 

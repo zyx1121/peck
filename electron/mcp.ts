@@ -162,7 +162,7 @@ export async function startMcp(
     )
     tool(
       "peck_tabs",
-      "List, open, activate, or close page windows. Each page has its own window and tabId. A new window follows the active window visibility; activating shows the target window.",
+      "List, open, activate, or close page windows. Each page has its own window and tabId. A new window follows the active window visibility. Activating never shows a hidden window; use peck_window for that.",
       {
         action: z.enum(["list", "open", "activate", "close"]).default("list"),
         url: z.string().max(4000).optional(),
@@ -177,7 +177,7 @@ export async function startMcp(
         }
         if (args.action === "activate" || args.action === "close") {
           if (!args.tabId) throw new Error("tabId required")
-          if (args.action === "activate") browser.activate(args.tabId)
+          if (args.action === "activate") browser.activate(args.tabId, false)
           else await browser.close(args.tabId)
         }
         return data(browser.list())

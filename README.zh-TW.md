@@ -69,11 +69,11 @@ codex mcp add peck --env ELECTRON_RUN_AS_NODE=1 -- \
 }
 ```
 
-Peck 沒開時，第一次呼叫 Peck 工具會在背景把它打開。選用的 [Peck skill](skills/peck/SKILL.md) 說明了整個留言流程。
+Peck 沒開時，第一次呼叫 Peck 工具會以 headless 模式打開它：沒有視窗，也沒有 Dock 圖示。要看頁面就請 agent 顯示視窗(`peck_window`)，或自己打開 Peck。選用的 [Peck skill](skills/peck/SKILL.md) 說明了整個留言流程。
 
 ### 視窗與背景模式
 
-每個頁面各有一個視窗，只有一列工具列。Comments、Network、Console 三個面板共用一個側欄。**Move to Background**(Cmd+H)會隱藏視窗但保留頁面，之後可以回來看同一個即時頁面。
+每個頁面各有一個視窗，只有一列工具列：網址、**Select element** 和選單。Comments、Network、Console 三個面板共用一個側欄，從選單開關。**Move to Background**(Cmd+H)會隱藏視窗但保留頁面，之後可以回來看同一個即時頁面。
 
 ### 喚醒停下的對話
 
